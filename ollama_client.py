@@ -2,6 +2,7 @@
 import requests
 import json
 import os
+import sys
 from dotenv import load_dotenv
 from config import get_client_config
 
@@ -53,13 +54,76 @@ class OllamaClient:
         # Merge with default params
         merged_options = {**self.default_params, **options}
 
+        # Use streaming approach to avoid JSON parsing issues
+        merged_options["stream"] = True
+
         payload = {"model": model, "messages": messages, **merged_options}
 
-        response = requests.post(f"{self.api_url}/chat", json=payload)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to chat: {response.text}")
+        print(
+            f"Making chat request to {self.api_url}/chat with model {model}",
+            file=sys.stderr,
+        )
+
+        try:
+            response = requests.post(f"{self.api_url}/chat", json=payload, stream=True)
+
+            if response.status_code != 200:
+                error_msg = f"Failed to chat: {response.text}"
+                print(error_msg, file=sys.stderr)
+                return {
+                    "message": {"role": "assistant", "content": f"Error: {error_msg}"}
+                }
+
+            # Process the streaming response line by line
+            full_content = ""
+            done = False
+            message_role = "assistant"
+
+            for line in response.iter_lines():
+                if not line:
+                    continue
+
+                try:
+                    # Decode the line and parse it as JSON
+                    line_str = line.decode("utf-8")
+                    chunk = json.loads(line_str)
+
+                    # Extract content from the chunk
+                    if "message" in chunk and "content" in chunk["message"]:
+                        content_chunk = chunk["message"]["content"]
+                        full_content += content_chunk
+
+                        # Update role if available
+                        if "role" in chunk["message"]:
+                            message_role = chunk["message"]["role"]
+
+                    # Check if this is the last chunk
+                    if "done" in chunk and chunk["done"]:
+                        done = True
+
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing chunk: {e}", file=sys.stderr)
+                    print(f"Problematic line: {line_str[:100]}", file=sys.stderr)
+                    # Try to extract any text content from the line
+                    import re
+
+                    text_matches = re.findall(r'"content"\s*:\s*"([^"]*)"', line_str)
+                    if text_matches:
+                        full_content += text_matches[0]
+                except Exception as e:
+                    print(f"Error processing chunk: {e}", file=sys.stderr)
+
+            # Create a properly formatted response
+            return {"message": {"role": message_role, "content": full_content}}
+
+        except Exception as e:
+            print(f"Request error: {e}", file=sys.stderr)
+            return {
+                "message": {
+                    "role": "assistant",
+                    "content": f"Sorry, I encountered an error: {str(e)}",
+                }
+            }
 
     def pull_model(self, model_name):
         """Pull a model from the Ollama library"""

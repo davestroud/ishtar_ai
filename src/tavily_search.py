@@ -89,42 +89,62 @@ class TavilySearch:
             # Added verbose debug information
             print("Sending request to Tavily API...", file=sys.stderr)
 
-            # First, verify the API is accessible
+            # Skip the status check since it can cause errors
+            # Make the actual request with proper authorization headers
             try:
-                test_response = requests.get(f"{self.base_url}/status", timeout=5)
+                response = requests.post(url, json=payload, headers=headers, timeout=15)
                 print(
-                    f"Tavily API status check: {test_response.status_code}",
+                    f"Received response with status code: {response.status_code}",
                     file=sys.stderr,
                 )
+            except requests.exceptions.Timeout:
+                print("Tavily API request timed out", file=sys.stderr)
+                return {"error": "The web search request timed out. Please try again."}
+            except requests.exceptions.ConnectionError:
+                print("Tavily API connection error", file=sys.stderr)
+                return {
+                    "error": "Could not connect to the web search service. Please check your internet connection."
+                }
             except Exception as e:
-                print(f"Tavily API status check failed: {e}", file=sys.stderr)
+                print(f"Tavily API request error: {e}", file=sys.stderr)
+                return {"error": f"Web search request error: {str(e)}"}
 
-            # Then make the actual request with proper authorization headers
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            print(
-                f"Received response with status code: {response.status_code}",
-                file=sys.stderr,
-            )
-
+            # Process the response
             if response.status_code == 200:
-                result = response.json()
-                if "results" in result:
-                    print(
-                        f"Success! Found {len(result['results'])} search results",
-                        file=sys.stderr,
-                    )
-                return result
+                try:
+                    result = response.json()
+                    if "results" in result:
+                        print(
+                            f"Success! Found {len(result['results'])} search results",
+                            file=sys.stderr,
+                        )
+                    return result
+                except json.JSONDecodeError as e:
+                    print(f"JSON parsing error: {e}", file=sys.stderr)
+                    print(f"Response content: {response.text[:500]}", file=sys.stderr)
+                    return {"error": f"Could not parse search results: {str(e)}"}
+            elif response.status_code == 401 or response.status_code == 403:
+                return {
+                    "error": "API key is invalid or expired. Please check your Tavily API key."
+                }
+            elif response.status_code == 429:
+                return {"error": "Rate limit exceeded. Please try again later."}
             else:
-                # Try to decode the error message
                 try:
                     error_details = response.json()
                     print(f"API Error: {error_details}", file=sys.stderr)
+                    return {
+                        "error": f"API error ({response.status_code}): {error_details}"
+                    }
                 except:
                     print(f"API Error: {response.text}", file=sys.stderr)
+                    return {
+                        "error": f"API error ({response.status_code}): {response.text}"
+                    }
 
-                raise Exception(f"API error: {response.status_code} - {response.text}")
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Tavily API request failed: {str(e)}")
+        except Exception as e:
+            print(f"Exception in Tavily search: {e}", file=sys.stderr)
+            return {"error": f"Web search failed: {str(e)}"}
 
     def answer_question(self, question: str, max_results: int = 3) -> str:
         """

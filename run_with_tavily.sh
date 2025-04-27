@@ -2,7 +2,7 @@
 # Script to run the app with Tavily API integration
 
 # Activate virtual environment
-source bin/activate
+source llm_env/bin/activate
 
 # Load the environment variables from .env if it exists
 if [ -f .env ]; then
@@ -85,4 +85,4 @@ fi
 echo "🚀 Starting Streamlit app..."
 # Run the Streamlit app
 echo "TAVILY_API_KEY=${TAVILY_API_KEY:+is set}"
-streamlit run src/streamlit_app.py 
+streamlit run streamlit_app.py 
