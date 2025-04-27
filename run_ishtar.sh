@@ -3,8 +3,10 @@
 
 # Ensure LANGCHAIN_API_KEY is set
 if [ -z "$LANGCHAIN_API_KEY" ]; then
-    export LANGCHAIN_API_KEY="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"
-    echo "Setting default LANGCHAIN_API_KEY"
+    echo "Error: LANGCHAIN_API_KEY environment variable is not set"
+    echo "Please set it in your .env file or export it in your shell"
+    echo "Example: export LANGCHAIN_API_KEY=your_api_key"
+    exit 1
 fi
 
 # Ensure LANGCHAIN_PROJECT is set

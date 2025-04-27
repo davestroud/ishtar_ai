@@ -54,7 +54,7 @@ Ishtar AI is a comprehensive AI platform for analyzing and providing insights on
    OLLAMA_HOST=host.docker.internal
    ```
 
-   > Note: The helper script `run_ishtar.sh` will automatically set default values for `LANGCHAIN_API_KEY` and `LANGCHAIN_PROJECT`.
+   > Note: The helper script `run_ishtar.sh` will automatically set a default value for `LANGCHAIN_PROJECT` but you must provide your own `LANGCHAIN_API_KEY`.
 
 ## Running the Application
 

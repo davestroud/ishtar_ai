@@ -2,7 +2,8 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
-from pydantic import BaseSettings, Field, root_validator
+from pydantic import Field, root_validator
+from pydantic_settings import BaseSettings
 
 # Find and load .env file from the project root
 # Try to locate .env file in multiple locations
