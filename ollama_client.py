@@ -12,6 +12,7 @@ load_dotenv()
 
 class OllamaClient:
     def __init__(self, base_url=None):
+        """Initialize the Ollama client with configuration from environment variables."""
         config = get_client_config()
         self.base_url = base_url or config["base_url"]
         self.api_url = f"{self.base_url}/api"
@@ -29,13 +30,10 @@ class OllamaClient:
     def generate(self, prompt, model=None, options=None):
         """Generate a response using the specified model"""
         model = model or self.default_model
-
-        if options is None:
-            options = {}
+        options = options or {}
 
         # Merge with default params
         merged_options = {**self.default_params, **options}
-
         payload = {"model": model, "prompt": prompt, **merged_options}
 
         response = requests.post(f"{self.api_url}/generate", json=payload)
@@ -47,9 +45,7 @@ class OllamaClient:
     def chat(self, messages, model=None, options=None):
         """Chat with the model using a conversation format"""
         model = model or self.default_model
-
-        if options is None:
-            options = {}
+        options = options or {}
 
         # Merge with default params
         merged_options = {**self.default_params, **options}
@@ -76,7 +72,6 @@ class OllamaClient:
 
             # Process the streaming response line by line
             full_content = ""
-            done = False
             message_role = "assistant"
 
             for line in response.iter_lines():
@@ -97,13 +92,8 @@ class OllamaClient:
                         if "role" in chunk["message"]:
                             message_role = chunk["message"]["role"]
 
-                    # Check if this is the last chunk
-                    if "done" in chunk and chunk["done"]:
-                        done = True
-
                 except json.JSONDecodeError as e:
                     print(f"Error parsing chunk: {e}", file=sys.stderr)
-                    print(f"Problematic line: {line_str[:100]}", file=sys.stderr)
                     # Try to extract any text content from the line
                     import re
 
@@ -140,13 +130,10 @@ class OllamaClient:
     def stream_generate(self, prompt, model=None, callback=None, options=None):
         """Stream generation results, calling the callback for each chunk"""
         model = model or self.default_model
-
-        if options is None:
-            options = {}
+        options = options or {}
 
         # Merge with default params and ensure streaming is enabled
         merged_options = {**self.default_params, **options, "stream": True}
-
         payload = {"model": model, "prompt": prompt, **merged_options}
 
         response = requests.post(f"{self.api_url}/generate", json=payload, stream=True)
@@ -154,11 +141,14 @@ class OllamaClient:
             full_response = ""
             for line in response.iter_lines():
                 if line:
-                    chunk = json.loads(line)
-                    text_chunk = chunk.get("response", "")
-                    full_response += text_chunk
-                    if callback:
-                        callback(text_chunk, chunk)
+                    try:
+                        chunk = json.loads(line)
+                        text_chunk = chunk.get("response", "")
+                        full_response += text_chunk
+                        if callback:
+                            callback(text_chunk, chunk)
+                    except json.JSONDecodeError:
+                        print(f"Error parsing chunk: {line}", file=sys.stderr)
             return full_response
         else:
             raise Exception(f"Failed to stream: {response.text}")

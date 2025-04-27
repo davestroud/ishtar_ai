@@ -18,6 +18,9 @@ COPY . .
 ENV OLLAMA_HOST=ollama
 ENV OLLAMA_PORT=11434
 ENV DEFAULT_MODEL=llama3
+ENV LANGCHAIN_PROJECT=default
+ENV LANGSMITH_TRACING=true
+# LANGCHAIN_API_KEY and OPENAI_API_KEY should be provided at runtime or via docker-compose
 
 # Expose Streamlit port
 EXPOSE 8501

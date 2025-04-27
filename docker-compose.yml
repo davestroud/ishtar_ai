@@ -19,6 +19,12 @@ services:
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - DEFAULT_MODEL=llama3
+      - LANGCHAIN_PROJECT=default
+      - LANGSMITH_TRACING=true
+      # Uncomment and add your API keys
+      # - LANGCHAIN_API_KEY=your_langsmith_api_key
+      # - OPENAI_API_KEY=your_openai_api_key
+      # - TAVILY_API_KEY=your_tavily_api_key
     ports:
       - "8501:8501"
     restart: unless-stopped

@@ -1,4 +1,8 @@
 requests==2.31.0
 python-dotenv==1.0.0
 streamlit==1.29.0
-numpy==1.26.0 
+numpy==1.26.0
+langchain==0.1.12
+langchain-core==0.1.24
+langsmith==0.0.87
+openai==1.76.0 

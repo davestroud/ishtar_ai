@@ -2,14 +2,40 @@
 
 The Ishtar AI Initiative is dedicated to harnessing the potential of Artificial Intelligence and Large Language Models (LLMs) to provide actionable insights and data analysis to media and journalism entities. Our goal is to support news organizations by delivering enhanced reporting and analytical capabilities for covering conflict zones, humanitarian crises, and regional developments.
 
+## Features
+
+- Web-based interface for querying various LLM providers (Ollama, OpenAI)
+- Web search integration for up-to-date information retrieval
+- Model selection and parameter configuration
+- Pull new models directly from the UI
+- Advanced settings for generation parameters
+- LangSmith integration for tracing and monitoring
+
 ## Prerequisites
 
 - Docker installed on your system
 - Python 3.7+ (if running locally)
 
+## Quick Start
+
+The easiest way to get started is to use our setup script:
+
+```bash
+# Install dependencies and start the app
+./setup.sh --install --run
+
+# Set API keys
+./setup.sh --tavily-key YOUR_TAVILY_API_KEY --langsmith-key YOUR_LANGSMITH_API_KEY --openai-key YOUR_OPENAI_KEY
+```
+
+For help with the setup script:
+```bash
+./setup.sh --help
+```
+
 ## Setup Options
 
-### Option 1: Using Docker Compose (Recommended)
+### Option 1: Using Docker Compose
 
 1. Start both Ollama and the client application:
 
@@ -30,6 +56,8 @@ docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 2. Install the required Python packages:
 
 ```bash
+python -m venv llm_env
+source llm_env/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -39,38 +67,47 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-### Option 3: Running in Docker individually
+## API Integrations
 
-1. Start Ollama in Docker:
-
-```bash
-docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
-```
-
-2. Build and run the client app in Docker:
-
-```bash
-docker build -t ishtar-ai .
-docker run -d -p 8501:8501 --name ishtar-ai --link ollama:ollama ishtar-ai
-```
-
-## Features
-
-- Web-based interface for querying LLMs
-- Web search integration for up-to-date information retrieval
-- Model selection and parameter configuration
-- Pull new models directly from the UI
-- Advanced settings for generation parameters
-
-## Web Search Integration
+### Web Search (Tavily)
 
 To enable web search capabilities, you'll need to:
 
 1. Get a Tavily API key from [tavily.com](https://tavily.com)
-2. Update your .env file with your API key:
+2. Add it to your .env file or use our setup script:
 
 ```bash
-./update_tavily_key.sh YOUR_TAVILY_API_KEY
+./setup.sh --tavily-key YOUR_TAVILY_API_KEY
+```
+
+### LangSmith Tracing
+
+Ishtar AI includes integration with [LangSmith](https://smith.langchain.com), LangChain's tracing and monitoring platform. This allows you to:
+
+- Track and monitor all interactions with the LLM
+- Debug issues with model responses
+- Analyze model performance and user interactions
+- Gather analytics on your application's usage
+
+To set up LangSmith:
+
+1. Create an account at [smith.langchain.com](https://smith.langchain.com)
+2. Get your API key from your LangSmith account
+3. Add it to your .env file or use our setup script:
+
+```bash
+./setup.sh --langsmith-key YOUR_LANGSMITH_API_KEY
+```
+
+### OpenAI Integration
+
+To use OpenAI models instead of Ollama:
+
+1. Get an API key from [platform.openai.com](https://platform.openai.com)
+2. Add it to your .env file or use our setup script:
+
+```bash
+./setup.sh --openai-key YOUR_OPENAI_API_KEY
 ```
 
 ## Managing Ollama Models
@@ -88,16 +125,6 @@ List available models:
 # Using Docker
 docker exec -it ollama ollama list
 ```
-
-## API Reference
-
-The `OllamaClient` class provides these main methods:
-
-- `list_models()`: Get available models
-- `generate(prompt, model)`: Generate text with a single prompt
-- `chat(messages, model)`: Chat using a conversation format
-- `pull_model(model_name)`: Pull a model from Ollama
-- `stream_generate(prompt, model, callback)`: Stream responses with callback
 
 ## Troubleshooting
 
