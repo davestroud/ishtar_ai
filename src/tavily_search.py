@@ -3,7 +3,50 @@ import requests
 import json
 import os
 import sys
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
+from pydantic import BaseModel, Field, HttpUrl, AnyHttpUrl, validator
+
+# Import settings
+from src.config import settings
+
+
+# Define Pydantic models for Tavily API
+class TavilySearchResult(BaseModel):
+    url: AnyHttpUrl
+    content: str
+    title: str
+    score: float
+    raw_content: Optional[str] = None
+
+
+class TavilySearchRequest(BaseModel):
+    query: str
+    search_depth: str = Field(default="basic")
+    max_results: int = Field(default=5, ge=1, le=10)
+    include_domains: Optional[List[str]] = None
+    exclude_domains: Optional[List[str]] = None
+    include_answer: bool = Field(default=True)
+    include_images: bool = Field(default=False)
+    include_raw_content: bool = Field(default=False)
+    max_tokens: int = Field(default=8000, ge=100)
+
+    @validator("search_depth")
+    def validate_search_depth(cls, v):
+        allowed_depths = ["basic", "advanced"]
+        if v not in allowed_depths:
+            raise ValueError(f"search_depth must be one of {allowed_depths}")
+        return v
+
+
+class TavilySearchResponse(BaseModel):
+    query: str
+    results: List[TavilySearchResult]
+    answer: Optional[str] = None
+    images: Optional[List[str]] = None
+
+
+class TavilyErrorResponse(BaseModel):
+    error: str
 
 
 class TavilySearch:
@@ -11,7 +54,7 @@ class TavilySearch:
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize with API key from parameter or environment variable"""
-        self.api_key = api_key or os.environ.get("TAVILY_API_KEY")
+        self.api_key = api_key or settings.tavily_api_key
         if not self.api_key:
             raise ValueError(
                 "Tavily API key is required. Set TAVILY_API_KEY environment variable or pass to constructor."
@@ -38,7 +81,7 @@ class TavilySearch:
         include_images: bool = False,
         include_raw_content: bool = False,
         max_tokens: int = 8000,
-    ) -> Dict[str, Any]:
+    ) -> Union[TavilySearchResponse, TavilyErrorResponse]:
         """
         Perform a search using the Tavily API
 
@@ -62,22 +105,24 @@ class TavilySearch:
         print(f"Making API request to: {url}", file=sys.stderr)
         print(f"Query: {query}", file=sys.stderr)
 
-        # Build the payload
-        payload = {
-            "query": query,
-            "search_depth": search_depth,
-            "max_results": max_results,
-            "include_answer": include_answer,
-            "include_images": include_images,
-            "include_raw_content": include_raw_content,
-            "max_tokens": max_tokens,
-        }
-
-        # Add optional parameters if provided
-        if include_domains:
-            payload["include_domains"] = include_domains
-        if exclude_domains:
-            payload["exclude_domains"] = exclude_domains
+        # Build and validate the payload with Pydantic
+        try:
+            search_request = TavilySearchRequest(
+                query=query,
+                search_depth=search_depth,
+                max_results=max_results,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+                include_answer=include_answer,
+                include_images=include_images,
+                include_raw_content=include_raw_content,
+                max_tokens=max_tokens,
+            )
+            # Convert to dict for the request
+            payload = search_request.dict(exclude_none=True)
+        except Exception as e:
+            print(f"Invalid search parameters: {e}", file=sys.stderr)
+            return TavilyErrorResponse(error=f"Invalid search parameters: {str(e)}")
 
         # Set up headers with proper authorization
         headers = {
@@ -99,15 +144,17 @@ class TavilySearch:
                 )
             except requests.exceptions.Timeout:
                 print("Tavily API request timed out", file=sys.stderr)
-                return {"error": "The web search request timed out. Please try again."}
+                return TavilyErrorResponse(
+                    error="The web search request timed out. Please try again."
+                )
             except requests.exceptions.ConnectionError:
                 print("Tavily API connection error", file=sys.stderr)
-                return {
-                    "error": "Could not connect to the web search service. Please check your internet connection."
-                }
+                return TavilyErrorResponse(
+                    error="Could not connect to the web search service. Please check your internet connection."
+                )
             except Exception as e:
                 print(f"Tavily API request error: {e}", file=sys.stderr)
-                return {"error": f"Web search request error: {str(e)}"}
+                return TavilyErrorResponse(error=f"Web search request error: {str(e)}")
 
             # Process the response
             if response.status_code == 200:
@@ -118,33 +165,48 @@ class TavilySearch:
                             f"Success! Found {len(result['results'])} search results",
                             file=sys.stderr,
                         )
+                        # Validate response with Pydantic
+                        try:
+                            validated_response = TavilySearchResponse(**result)
+                            return validated_response
+                        except Exception as validation_error:
+                            print(
+                                f"Response validation error: {validation_error}",
+                                file=sys.stderr,
+                            )
+                            # Return raw result if validation fails
+                            return result
                     return result
                 except json.JSONDecodeError as e:
                     print(f"JSON parsing error: {e}", file=sys.stderr)
                     print(f"Response content: {response.text[:500]}", file=sys.stderr)
-                    return {"error": f"Could not parse search results: {str(e)}"}
+                    return TavilyErrorResponse(
+                        error=f"Could not parse search results: {str(e)}"
+                    )
             elif response.status_code == 401 or response.status_code == 403:
-                return {
-                    "error": "API key is invalid or expired. Please check your Tavily API key."
-                }
+                return TavilyErrorResponse(
+                    error="API key is invalid or expired. Please check your Tavily API key."
+                )
             elif response.status_code == 429:
-                return {"error": "Rate limit exceeded. Please try again later."}
+                return TavilyErrorResponse(
+                    error="Rate limit exceeded. Please try again later."
+                )
             else:
                 try:
                     error_details = response.json()
                     print(f"API Error: {error_details}", file=sys.stderr)
-                    return {
-                        "error": f"API error ({response.status_code}): {error_details}"
-                    }
+                    return TavilyErrorResponse(
+                        error=f"API error ({response.status_code}): {str(error_details)}"
+                    )
                 except:
                     print(f"API Error: {response.text}", file=sys.stderr)
-                    return {
-                        "error": f"API error ({response.status_code}): {response.text}"
-                    }
+                    return TavilyErrorResponse(
+                        error=f"API error ({response.status_code}): {response.text}"
+                    )
 
         except Exception as e:
             print(f"Exception in Tavily search: {e}", file=sys.stderr)
-            return {"error": f"Web search failed: {str(e)}"}
+            return TavilyErrorResponse(error=f"Web search failed: {str(e)}")
 
     def answer_question(self, question: str, max_results: int = 3) -> str:
         """
@@ -165,17 +227,33 @@ class TavilySearch:
                 search_depth="advanced",
             )
 
-            answer = result.get("answer", "")
-            if not answer:
-                context = "\n\n".join(
-                    [
-                        f"Source {i+1}: {item.get('content', '')}"
-                        for i, item in enumerate(result.get("results", []))
-                    ]
-                )
-                return f"No direct answer found, but here's some relevant information:\n\n{context}"
+            # Check if we have a Pydantic model or dict response
+            if isinstance(result, TavilySearchResponse):
+                answer = result.answer
+                if not answer:
+                    context = "\n\n".join(
+                        [
+                            f"Source {i+1}: {item.content}"
+                            for i, item in enumerate(result.results)
+                        ]
+                    )
+                    return f"No direct answer found, but here's some relevant information:\n\n{context}"
+                return answer
+            elif isinstance(result, TavilyErrorResponse):
+                return f"Error: {result.error}"
+            else:
+                # Handle dict response (for backward compatibility)
+                answer = result.get("answer", "")
+                if not answer:
+                    context = "\n\n".join(
+                        [
+                            f"Source {i+1}: {item.get('content', '')}"
+                            for i, item in enumerate(result.get("results", []))
+                        ]
+                    )
+                    return f"No direct answer found, but here's some relevant information:\n\n{context}"
+                return answer
 
-            return answer
         except Exception as e:
             return f"Error retrieving information: {str(e)}"
 
@@ -185,7 +263,7 @@ if __name__ == "__main__":
     import sys
 
     # Check if API key exists
-    api_key = os.environ.get("TAVILY_API_KEY")
+    api_key = settings.tavily_api_key
     if not api_key:
         print("Error: TAVILY_API_KEY environment variable not set")
         sys.exit(1)

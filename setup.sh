@@ -11,11 +11,13 @@ print_help() {
     echo "  --tavily-key KEY       Set Tavily API key for web search"
     echo "  --langsmith-key KEY    Set LangSmith API key for tracing"
     echo "  --openai-key KEY       Set OpenAI API key"
+    echo "  --langchain-project NAME  Set LangChain project name"
     echo "  --install              Install dependencies"
     echo "  --run                  Run the application after setup"
     echo ""
     echo "Examples:"
     echo "  ./setup.sh --install --tavily-key your_tavily_key"
+    echo "  ./setup.sh --langchain-project ishtar_langchain"
     echo "  ./setup.sh --run"
 }
 
@@ -51,7 +53,7 @@ setup_env() {
         echo "# OPENAI_API_KEY=your_openai_api_key" >> .env
         echo "" >> .env
         echo "# LangSmith Configuration" >> .env
-        echo "LANGCHAIN_PROJECT=default" >> .env
+        echo "LANGCHAIN_PROJECT=ishtar_langchain" >> .env
         echo "LANGCHAIN_ENDPOINT=https://api.smith.langchain.com" >> .env
         echo "LANGSMITH_TRACING=true" >> .env
         echo "" >> .env
@@ -160,6 +162,10 @@ while [[ $# -gt 0 ]]; do
             OPENAI_KEY="$2"
             shift 2
             ;;
+        --langchain-project)
+            LANGCHAIN_PROJECT="$2"
+            shift 2
+            ;;
         --install)
             DO_INSTALL=true
             shift
@@ -190,6 +196,10 @@ fi
 
 if [ ! -z "$OPENAI_KEY" ]; then
     update_env_var "OPENAI_API_KEY" "$OPENAI_KEY"
+fi
+
+if [ ! -z "$LANGCHAIN_PROJECT" ]; then
+    update_env_var "LANGCHAIN_PROJECT" "$LANGCHAIN_PROJECT"
 fi
 
 # Install dependencies if requested

@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Add metadata
 LABEL org.opencontainers.image.title="Ishtar AI"
@@ -7,23 +7,37 @@ LABEL org.opencontainers.image.vendor="Ishtar AI Initiative"
 
 WORKDIR /app
 
-# Copy the requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    software-properties-common \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the application code
-COPY . .
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:$PATH"
 
-# Set environment variables
-ENV OLLAMA_HOST=ollama
-ENV OLLAMA_PORT=11434
-ENV DEFAULT_MODEL=llama3
-ENV LANGCHAIN_PROJECT=default
-ENV LANGSMITH_TRACING=true
-# LANGCHAIN_API_KEY and OPENAI_API_KEY should be provided at runtime or via docker-compose
+# Copy poetry configuration
+COPY pyproject.toml poetry.lock* /app/
 
-# Expose Streamlit port
+# Configure poetry to not use virtualenvs inside Docker
+RUN poetry config virtualenvs.create false
+
+# Install dependencies
+RUN poetry install --no-interaction --no-ansi --no-root
+
+# Copy application code
+COPY . /app/
+
+# Environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Expose ports
 EXPOSE 8501
+EXPOSE 8000
 
-# Command to run the application
-CMD ["streamlit", "run", "streamlit_app.py", "--server.address=0.0.0.0"] 
+# Default command
+CMD ["poetry", "run", "streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"] 

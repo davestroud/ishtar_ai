@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "ishtar-ai"
+version = "0.1.0"
+description = "Ishtar AI Initiative for media and journalism entities"
+authors = ["David Stroud <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+requests = "^2.31.0"
+python-dotenv = "^1.0.0"
+streamlit = "^1.29.0"
+numpy = "^1.26.0"
+langchain = "^0.1.12"
+langchain-core = ">=0.1.31,<0.2.0"
+langsmith = ">=0.1.17,<0.2.0"
+openai = "^1.76.0"
+pinecone-client = "^3.0.0"
+newsapi-python = "^0.2.7"
+tqdm = "^4.66.0"
+pypdf = "^4.0.0"
+python-docx = "^1.0.1"
+tiktoken = "^0.9.0"
+uvicorn = "^0.34.2"
+starlette = "^0.46.2"
+fastapi = "^0.115.12"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+app = "streamlit_app:app"
+asgi = "asgi_app:app"
+
+# Docker configuration for poetry
+[tool.poetry.build]
+generate-setup-file = false 

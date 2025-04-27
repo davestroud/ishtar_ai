@@ -5,6 +5,7 @@ import json
 import os
 from src.tavily_search import TavilySearch
 from src.langsmith_integration import get_langsmith_client, trace_ollama_chat
+from src.pinecone_integration import get_pinecone_client
 import openai
 
 # Page configuration
@@ -12,6 +13,12 @@ st.set_page_config(page_title="Ishtar AI", page_icon="🔍", layout="wide")
 
 # Configure API keys
 openai.api_key = os.environ.get("OPENAI_API_KEY")
+
+# Import langchain_community for embeddings to avoid deprecation warnings
+try:
+    from langchain_community.embeddings import OpenAIEmbeddings
+except ImportError:
+    from langchain.embeddings import OpenAIEmbeddings
 
 
 # Initialize clients
@@ -36,9 +43,15 @@ def get_ls_client():
     return get_langsmith_client()
 
 
+@st.cache_resource
+def get_pc_client():
+    return get_pinecone_client()
+
+
 client = get_client()
 tavily_client = get_tavily_client()
 langsmith_client = get_ls_client()
+pinecone_client = get_pc_client()
 
 # Page title and description
 st.title("🔍 Ishtar AI")
@@ -111,6 +124,17 @@ with st.sidebar:
         st.success(f"LangSmith tracing enabled for project: {project_name}")
         st.markdown(
             f"[View traces](https://smith.langchain.com/projects/{project_name})"
+        )
+
+    # Pinecone integration
+    pinecone_available = (
+        pinecone_client is not None and pinecone_client.index is not None
+    )
+    if pinecone_available:
+        st.success(f"Pinecone connected to index: {pinecone_client.index_name}")
+    else:
+        st.warning(
+            "Pinecone connection not available. Check your API key and host in the .env file."
         )
 
     # Web search option
@@ -223,12 +247,58 @@ if prompt := st.chat_input("Ask a question or request an analysis..."):
                         )
                         search_metadata["search_error"] = err_msg
 
+                # Check if pinecone is available to provide vector search results
+                vector_search_results = None
+                if pinecone_available and model_provider == "OpenAI" and openai.api_key:
+                    try:
+                        with st.status("Searching vector database..."):
+                            # Get embeddings from OpenAI
+                            response = openai.embeddings.create(
+                                input=prompt, model="text-embedding-3-small"
+                            )
+                            embedding = response.data[0].embedding
+
+                            # Query Pinecone
+                            results = pinecone_client.query(
+                                vector=embedding, top_k=3, include_metadata=True
+                            )
+
+                            if results:
+                                vector_search_results = "Vector database results:\n\n"
+                                for i, result in enumerate(results, 1):
+                                    title = result.get("metadata", {}).get(
+                                        "title", "No title"
+                                    )
+                                    content = result.get("metadata", {}).get(
+                                        "content", "No content available"
+                                    )
+                                    url = result.get("metadata", {}).get("url", "")
+                                    score = result.get("score", 0)
+                                    vector_search_results += f"{i}. **{title}** (Relevance: {score:.2f})\n{content}\n"
+                                    if url:
+                                        vector_search_results += f"[Source]({url})\n\n"
+                                    else:
+                                        vector_search_results += "\n"
+                            else:
+                                vector_search_results = "Note: No relevant information found in the vector database."
+                    except Exception as e:
+                        st.error(f"Vector search error: {str(e)}")
+                        vector_search_results = (
+                            f"Note: Vector search failed due to an error: {str(e)}"
+                        )
+
                 # Create the prompt for the LLM
                 messages = st.session_state.messages.copy()
 
                 # Add web search results to the prompt if available
                 if web_search_results:
                     messages.append({"role": "system", "content": web_search_results})
+
+                # Add vector search results to the prompt if available
+                if vector_search_results:
+                    messages.append(
+                        {"role": "system", "content": vector_search_results}
+                    )
 
                 # Get response from the model based on selected provider
                 if model_provider == "Ollama":

@@ -1,133 +1,159 @@
-# Ishtar AI
+# Ishtar AI Project
 
-The Ishtar AI Initiative is dedicated to harnessing the potential of Artificial Intelligence and Large Language Models (LLMs) to provide actionable insights and data analysis to media and journalism entities. Our goal is to support news organizations by delivering enhanced reporting and analytical capabilities for covering conflict zones, humanitarian crises, and regional developments.
+Ishtar AI is a comprehensive AI platform for analyzing and providing insights on conflict zones, humanitarian crises, and regional developments.
 
 ## Features
 
-- Web-based interface for querying various LLM providers (Ollama, OpenAI)
-- Web search integration for up-to-date information retrieval
-- Model selection and parameter configuration
-- Pull new models directly from the UI
-- Advanced settings for generation parameters
-- LangSmith integration for tracing and monitoring
+- **Chat Interface**: Interact with various AI models through an intuitive Streamlit UI
+- **Web Search**: Get real-time information from the web using Tavily integration
+- **Vector Database**: Store and retrieve relevant information using Pinecone
+- **News Integration**: Fetch and index news articles from various sources
+- **ASGI API**: Access all functionality through a modern API with WebSocket support
+- **Real-time Chat**: Use WebSockets for bidirectional communication with AI models
 
-## Prerequisites
+## Getting Started
 
-- Docker installed on your system
-- Python 3.7+ (if running locally)
+### Prerequisites
 
-## Quick Start
+- Python 3.11+
+- Poetry for dependency management
+- Ollama for local AI model hosting
+- Required API keys (OpenAI, Tavily, Pinecone, LangSmith, NewsAPI)
 
-The easiest way to get started is to use our setup script:
+### Installation
 
-```bash
-# Install dependencies and start the app
-./setup.sh --install --run
+1. Clone the repository
+   ```bash
+   git clone https://github.com/yourusername/ishtar_ai.git
+   cd ishtar_ai
+   ```
 
-# Set API keys
-./setup.sh --tavily-key YOUR_TAVILY_API_KEY --langsmith-key YOUR_LANGSMITH_API_KEY --openai-key YOUR_OPENAI_KEY
-```
+2. Install dependencies
+   ```bash
+   poetry install
+   ```
 
-For help with the setup script:
-```bash
-./setup.sh --help
-```
+3. Set up environment variables by creating a `.env` file:
+   ```
+   # Required API keys
+   OPENAI_API_KEY=your_openai_key
+   TAVILY_API_KEY=your_tavily_key
+   PINECONE_API_KEY=your_pinecone_key
+   PINECONE_HOST=your_pinecone_host
+   PINECONE_INDEX=ishtar
+   
+   # LangSmith configuration
+   LANGCHAIN_API_KEY=your_langsmith_key
+   LANGCHAIN_PROJECT=ishtar-ai
+   LANGSMITH_TRACING=true
+   
+   # News API configuration
+   NEWSAPI_KEY=your_newsapi_key
+   
+   # Ollama configuration (if using Docker)
+   OLLAMA_HOST=host.docker.internal
+   ```
 
-## Setup Options
+   > Note: The helper script `run_ishtar.sh` will automatically set default values for `LANGCHAIN_API_KEY` and `LANGCHAIN_PROJECT`.
 
-### Option 1: Using Docker Compose
+## Running the Application
 
-1. Start both Ollama and the client application:
+### Using the Helper Script (Recommended)
 
-```bash
-docker-compose up -d
-```
-
-2. Access the Ishtar AI web app at: http://localhost:8501
-
-### Option 2: Running Ollama in Docker and Client Locally
-
-1. Start Ollama in Docker:
-
-```bash
-docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
-```
-
-2. Install the required Python packages:
-
-```bash
-python -m venv llm_env
-source llm_env/bin/activate
-pip install -r requirements.txt
-```
-
-3. Run the Streamlit web app:
-
-```bash
-streamlit run streamlit_app.py
-```
-
-## API Integrations
-
-### Web Search (Tavily)
-
-To enable web search capabilities, you'll need to:
-
-1. Get a Tavily API key from [tavily.com](https://tavily.com)
-2. Add it to your .env file or use our setup script:
+The easiest way to run Ishtar AI is using the provided helper script, which automatically sets the required environment variables:
 
 ```bash
-./setup.sh --tavily-key YOUR_TAVILY_API_KEY
+# Make the script executable
+chmod +x run_ishtar.sh
+
+# Run Streamlit app (default)
+./run_ishtar.sh --streamlit
+
+# Run ASGI app
+./run_ishtar.sh --asgi
+
+# Run with Docker
+./run_ishtar.sh --docker
+
+# Run ASGI with Docker
+./run_ishtar.sh --docker-asgi
+
+# Show help
+./run_ishtar.sh --help
 ```
 
-### LangSmith Tracing
-
-Ishtar AI includes integration with [LangSmith](https://smith.langchain.com), LangChain's tracing and monitoring platform. This allows you to:
-
-- Track and monitor all interactions with the LLM
-- Debug issues with model responses
-- Analyze model performance and user interactions
-- Gather analytics on your application's usage
-
-To set up LangSmith:
-
-1. Create an account at [smith.langchain.com](https://smith.langchain.com)
-2. Get your API key from your LangSmith account
-3. Add it to your .env file or use our setup script:
+### Streamlit Interface
 
 ```bash
-./setup.sh --langsmith-key YOUR_LANGSMITH_API_KEY
+poetry run streamlit run streamlit_app.py
 ```
 
-### OpenAI Integration
+Access the Streamlit UI at http://localhost:8501
 
-To use OpenAI models instead of Ollama:
-
-1. Get an API key from [platform.openai.com](https://platform.openai.com)
-2. Add it to your .env file or use our setup script:
+### ASGI API Interface
 
 ```bash
-./setup.sh --openai-key YOUR_OPENAI_API_KEY
+# Run with Python
+poetry run python asgi_app.py
+
+# Or run with Uvicorn directly
+poetry run uvicorn asgi_app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## Managing Ollama Models
+Access:
+- ASGI API: http://localhost:8000
+- WebSocket Demo: http://localhost:8000/static/index.html
+- API Documentation: http://localhost:8000/docs
 
-Pull a model from Ollama (either through the API or using Docker):
+### Using Docker Compose
 
 ```bash
-# Using Docker
-docker exec -it ollama ollama pull llama3
+# For Streamlit only
+docker-compose up
+
+# For ASGI API (includes Streamlit)
+docker-compose -f docker-compose-asgi.yml up
 ```
 
-List available models:
+## Project Structure
 
-```bash
-# Using Docker
-docker exec -it ollama ollama list
+```
+ishtar_ai/
+├── streamlit_app.py   # Streamlit UI
+├── asgi_app.py        # ASGI API
+├── ollama_client.py   # Ollama client integration
+├── src/
+│   ├── langsmith_integration.py  # LangSmith tracing
+│   ├── newsapi_integration.py    # News API integration
+│   ├── pinecone_integration.py   # Pinecone vector DB
+│   └── tavily_search.py          # Tavily search API
+├── utils/
+│   └── news_fetcher.py           # Command-line news fetcher
+└── static/
+    └── index.html                # WebSocket demo interface
 ```
 
-## Troubleshooting
+## ASGI API
 
-- If you get connection errors, make sure the Ollama Docker container is running
-- Check Docker logs: `docker logs ollama`
-- Make sure port 11434 is accessible and not blocked by a firewall 
+The ASGI application provides both REST endpoints and WebSocket support:
+
+### REST Endpoints
+
+- `GET /api/health` - Health check
+- `GET /api/models` - List available models
+- `POST /api/search` - Search the web with Tavily
+- `POST /api/vector-search` - Search vectors in Pinecone
+
+### WebSocket Endpoint
+
+- `WebSocket /ws/chat` - Real-time chat interface
+
+For more details, see [ASGI_README.md](ASGI_README.md).
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 

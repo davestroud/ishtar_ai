@@ -1,12 +1,13 @@
 version: '3'
 
 services:
-  ishtar-ai:
+  asgi:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8501:8501"
+      - "8000:8000"  # ASGI API
+      - "8501:8501"  # Streamlit UI
     volumes:
       - .:/app
     environment:
@@ -21,11 +22,7 @@ services:
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-ishtar-ai}
       - LANGSMITH_TRACING=true
       - NEWSAPI_KEY=${NEWSAPI_KEY}
+    command: poetry run uvicorn asgi_app:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
     extra_hosts:
-      - "host.docker.internal:host-gateway"
-    command: poetry run streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0
-
-volumes:
-  ollama_data:
-    name: ollama_data 
+      - "host.docker.internal:host-gateway" 

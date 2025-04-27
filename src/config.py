@@ -1,7 +1,8 @@
 import os
 import sys
-from dotenv import load_dotenv
 from pathlib import Path
+from dotenv import load_dotenv
+from pydantic import BaseSettings, Field, root_validator
 
 # Find and load .env file from the project root
 # Try to locate .env file in multiple locations
@@ -21,33 +22,62 @@ else:
     # If no .env file found, still try to load from any .env file
     load_dotenv()
 
-# Ollama API Configuration
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
-OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
-OLLAMA_BASE_URL = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
-# Default model to use
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "llama3")
+class IshtarSettings(BaseSettings):
+    # Ollama API Configuration
+    ollama_host: str = Field(default="localhost", env="OLLAMA_HOST")
+    ollama_port: str = Field(default="11434", env="OLLAMA_PORT")
 
-# Generation parameters
-DEFAULT_TEMPERATURE = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
-DEFAULT_MAX_TOKENS = int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
+    # Default model to use
+    default_model: str = Field(default="llama3", env="DEFAULT_MODEL")
 
-# Tavily API key
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-if TAVILY_API_KEY:
-    print(f"Tavily API key found (length: {len(TAVILY_API_KEY)})", file=sys.stderr)
-else:
-    print("No Tavily API key found in environment variables", file=sys.stderr)
+    # Generation parameters
+    default_temperature: float = Field(default=0.7, env="DEFAULT_TEMPERATURE")
+    default_max_tokens: int = Field(default=1000, env="DEFAULT_MAX_TOKENS")
+
+    # Tavily API key
+    tavily_api_key: str = Field(default=None, env="TAVILY_API_KEY")
+
+    # NewsAPI key
+    newsapi_key: str = Field(
+        default="b3e63a8ea4b84d858d7784cc6a46a2e3", env="NEWSAPI_KEY"
+    )
+
+    # OpenAI API key
+    openai_api_key: str = Field(default=None, env="OPENAI_API_KEY")
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+
+    @property
+    def ollama_base_url(self) -> str:
+        return f"http://{self.ollama_host}:{self.ollama_port}"
+
+    @root_validator(skip_on_failure=True)
+    def validate_api_keys(cls, values):
+        if values.get("tavily_api_key"):
+            print(
+                f"Tavily API key found (length: {len(values['tavily_api_key'])})",
+                file=sys.stderr,
+            )
+        else:
+            print("No Tavily API key found in environment variables", file=sys.stderr)
+        return values
 
 
-# Configure the client
+# Initialize settings
+settings = IshtarSettings()
+
+
+# Configure the client (for backward compatibility)
 def get_client_config():
     return {
-        "base_url": OLLAMA_BASE_URL,
-        "default_model": DEFAULT_MODEL,
+        "base_url": settings.ollama_base_url,
+        "default_model": settings.default_model,
         "default_params": {
-            "temperature": DEFAULT_TEMPERATURE,
-            "max_tokens": DEFAULT_MAX_TOKENS,
+            "temperature": settings.default_temperature,
+            "max_tokens": settings.default_max_tokens,
         },
     }
