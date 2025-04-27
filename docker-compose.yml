@@ -12,7 +12,7 @@ services:
 
   app:
     build: .
-    container_name: ollama-client
+    container_name: ishtar-ai
     depends_on:
       - ollama
     environment:

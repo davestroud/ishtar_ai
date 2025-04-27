@@ -1,6 +1,6 @@
-# Ollama Docker Client
+# Ishtar AI
 
-A simple Python client for interacting with Ollama LLM running in Docker.
+The Ishtar AI Initiative is dedicated to harnessing the potential of Artificial Intelligence and Large Language Models (LLMs) to provide actionable insights and data analysis to media and journalism entities. Our goal is to support news organizations by delivering enhanced reporting and analytical capabilities for covering conflict zones, humanitarian crises, and regional developments.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ A simple Python client for interacting with Ollama LLM running in Docker.
 docker-compose up -d
 ```
 
-2. Access the Streamlit web app at: http://localhost:8501
+2. Access the Ishtar AI web app at: http://localhost:8501
 
 ### Option 2: Running Ollama in Docker and Client Locally
 
@@ -50,48 +50,27 @@ docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 2. Build and run the client app in Docker:
 
 ```bash
-docker build -t ollama-client .
-docker run -d -p 8501:8501 --name ollama-client --link ollama:ollama ollama-client
+docker build -t ishtar-ai .
+docker run -d -p 8501:8501 --name ishtar-ai --link ollama:ollama ishtar-ai
 ```
 
-## Usage
+## Features
 
-### CLI Client
-
-Run the basic CLI client:
-
-```bash
-python ollama_client.py
-```
-
-This will:
-- List available models
-- Generate a response to a sample prompt
-- Run a sample chat conversation
-
-### Streamlit Web App
-
-Features:
-- Chat interface for conversations
-- Model selection
+- Web-based interface for querying LLMs
+- Web search integration for up-to-date information retrieval
+- Model selection and parameter configuration
 - Pull new models directly from the UI
-- Adjust generation parameters
+- Advanced settings for generation parameters
 
-### Testing Embeddings
+## Web Search Integration
 
-Run the embeddings example:
+To enable web search capabilities, you'll need to:
 
-```bash
-python sample_embeddings.py
-```
-
-### Using the API Directly
-
-Try the curl examples:
+1. Get a Tavily API key from [tavily.com](https://tavily.com)
+2. Update your .env file with your API key:
 
 ```bash
-chmod +x curl_examples.sh
-./curl_examples.sh
+./update_tavily_key.sh YOUR_TAVILY_API_KEY
 ```
 
 ## Managing Ollama Models

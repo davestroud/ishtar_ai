@@ -1,5 +1,10 @@
 FROM python:3.10-slim
 
+# Add metadata
+LABEL org.opencontainers.image.title="Ishtar AI"
+LABEL org.opencontainers.image.description="AI-powered insights for media and journalism"
+LABEL org.opencontainers.image.vendor="Ishtar AI Initiative"
+
 WORKDIR /app
 
 # Copy the requirements and install dependencies

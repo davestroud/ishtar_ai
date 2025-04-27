@@ -5,7 +5,7 @@ import json
 import os
 from src.tavily_search import TavilySearch
 
-st.set_page_config(page_title="Ollama AI Chat", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Ishtar AI", page_icon="🔍", layout="wide")
 
 
 # Initialize Ollama client
@@ -29,9 +29,21 @@ def get_tavily_client():
 client = get_client()
 tavily_client = get_tavily_client()
 
-# Page title
-st.title("🤖 Ollama AI Chat")
-st.markdown("Interact with Ollama AI models running in Docker")
+# Page title and description
+st.title("🔍 Ishtar AI")
+
+# Mission statement
+st.markdown(
+    """
+    The Ishtar AI Initiative is dedicated to harnessing the potential of Artificial Intelligence 
+    and Large Language Models (LLMs) to provide actionable insights and data analysis to media 
+    and journalism entities. Our goal is to support news organizations by delivering enhanced 
+    reporting and analytical capabilities for covering conflict zones, humanitarian crises, 
+    and regional developments.
+"""
+)
+
+st.markdown("---")
 
 # Sidebar for model selection and settings
 with st.sidebar:
@@ -100,7 +112,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Chat input
-if prompt := st.chat_input("Say something..."):
+if prompt := st.chat_input("Ask a question or request an analysis..."):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -110,7 +122,7 @@ if prompt := st.chat_input("Say something..."):
 
     # Get response from the model
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner("Analyzing..."):
             try:
                 # Check if web search is enabled and Tavily client is available
                 web_search_results = None
