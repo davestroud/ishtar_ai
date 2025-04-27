@@ -3,7 +3,39 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from pydantic import Field, root_validator
-from pydantic_settings import BaseSettings
+from typing import Optional, Union
+
+# Try to import BaseSettings from pydantic_settings, fall back to regular BaseModel if not available
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    # If pydantic_settings is not available, use BaseModel from pydantic directly
+    from pydantic import BaseModel as BaseSettingsBase
+
+    class BaseSettings(BaseSettingsBase):
+        """
+        Fallback BaseSettings implementation when pydantic_settings is not available.
+        This provides basic functionality similar to BaseSettings.
+        """
+
+        class Config:
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+            case_sensitive = False
+
+        def __init__(self, **data):
+            # Load environment variables for fields
+            env_data = {}
+            for field_name, field in self.__class__.__annotations__.items():
+                field_info = self.__class__.__fields__[field_name]
+                env_var = field_info.field_info.extra.get("env", field_name.upper())
+                if env_var in os.environ:
+                    env_data[field_name] = os.environ[env_var]
+
+            # Override with any explicitly provided values
+            env_data.update(data)
+            super().__init__(**env_data)
+
 
 # Find and load .env file from the project root
 # Try to locate .env file in multiple locations
@@ -47,10 +79,26 @@ class IshtarSettings(BaseSettings):
     # OpenAI API key
     openai_api_key: str = Field(default=None, env="OPENAI_API_KEY")
 
+    # Pinecone configuration
+    pinecone_api_key: str = Field(default=None, env="PINECONE_API_KEY")
+    pinecone_host: str = Field(default=None, env="PINECONE_HOST")
+    pinecone_index: str = Field(default="ishtar", env="PINECONE_INDEX")
+
+    # LangSmith configuration
+    langchain_api_key: Optional[str] = Field(default=None, env="LANGCHAIN_API_KEY")
+    langchain_project: str = Field(default="ishtar-ai", env="LANGCHAIN_PROJECT")
+    langsmith_tracing: bool = Field(default=True, env="LANGSMITH_TRACING")
+    langsmith_endpoint: str = Field(
+        default="https://api.smith.langchain.com", env="LANGSMITH_ENDPOINT"
+    )
+    langsmith_api_key: Optional[str] = Field(default=None, env="LANGSMITH_API_KEY")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        # Allow extra fields to avoid validation errors for new environment variables
+        extra = "allow"
 
     @property
     def ollama_base_url(self) -> str:
@@ -58,6 +106,7 @@ class IshtarSettings(BaseSettings):
 
     @root_validator(skip_on_failure=True)
     def validate_api_keys(cls, values):
+        # Check Tavily API key
         if values.get("tavily_api_key"):
             print(
                 f"Tavily API key found (length: {len(values['tavily_api_key'])})",
@@ -65,6 +114,20 @@ class IshtarSettings(BaseSettings):
             )
         else:
             print("No Tavily API key found in environment variables", file=sys.stderr)
+
+        # Check LangChain API key
+        if values.get("langchain_api_key"):
+            print(
+                f"LangChain API key found (length: {len(values['langchain_api_key'])})",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "No LangChain API key found in environment variables", file=sys.stderr
+            )
+            print("LangSmith tracing will be disabled", file=sys.stderr)
+            values["langsmith_tracing"] = False
+
         return values
 
 

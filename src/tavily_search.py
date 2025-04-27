@@ -220,11 +220,27 @@ class TavilySearch:
             String containing the answer
         """
         try:
+            # For real-time queries like weather, use advanced search with more results
+            is_realtime_query = any(
+                keyword in question.lower()
+                for keyword in [
+                    "weather",
+                    "temperature",
+                    "forecast",
+                    "current",
+                    "now",
+                    "today",
+                ]
+            )
+
+            depth = "advanced" if is_realtime_query else "basic"
+            results_count = 5 if is_realtime_query else max_results
+
             result = self.search(
                 query=question,
-                max_results=max_results,
+                max_results=results_count,
                 include_answer=True,
-                search_depth="advanced",
+                search_depth=depth,
             )
 
             # Check if we have a Pydantic model or dict response

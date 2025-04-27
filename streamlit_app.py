@@ -6,6 +6,7 @@ import os
 from src.tavily_search import TavilySearch
 from src.langsmith_integration import get_langsmith_client, trace_ollama_chat
 from src.pinecone_integration import get_pinecone_client
+from src.weather_api import WeatherAPI
 import openai
 
 # Page configuration
@@ -19,6 +20,24 @@ try:
     from langchain_community.embeddings import OpenAIEmbeddings
 except ImportError:
     from langchain.embeddings import OpenAIEmbeddings
+
+
+def is_langsmith_key_set():
+    """Check if LangSmith API key is set in .env file or environment"""
+    # First check environment
+    if os.environ.get("LANGCHAIN_API_KEY"):
+        return True
+
+    # Then check .env file if it exists
+    env_file = ".env"
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                if line.strip().startswith("LANGCHAIN_API_KEY="):
+                    key = line.strip().split("=", 1)[1].strip()
+                    if key and key != "your_langsmith_key":
+                        return True
+    return False
 
 
 # Initialize clients
@@ -48,10 +67,16 @@ def get_pc_client():
     return get_pinecone_client()
 
 
+@st.cache_resource
+def get_weather_client():
+    return WeatherAPI()
+
+
 client = get_client()
 tavily_client = get_tavily_client()
 langsmith_client = get_ls_client()
 pinecone_client = get_pc_client()
+weather_client = get_weather_client()
 
 # Page title and description
 st.title("🔍 Ishtar AI")
@@ -110,21 +135,63 @@ with st.sidebar:
     # Debug mode
     debug_mode = st.checkbox("Enable debug mode", value=False)
 
-    # LangSmith integration
-    langsmith_enabled = st.checkbox(
-        "Enable LangSmith tracing", value=(langsmith_client is not None)
+    # API Status Section
+    st.sidebar.subheader("API Status")
+
+    # Tavily API status
+    tavily_available = tavily_client is not None
+    tavily_status = "✅ Connected" if tavily_available else "❌ Not Connected"
+    st.sidebar.text(f"Tavily Search API: {tavily_status}")
+    if not tavily_available:
+        st.sidebar.info("Run: ./update_tavily_key.sh YOUR_TAVILY_API_KEY")
+
+    # OpenWeather API status
+    weather_available = (
+        weather_client is not None and weather_client.api_key is not None
     )
-    if langsmith_enabled and langsmith_client is None:
-        st.warning(
-            "LangSmith API key not found. Set LANGCHAIN_API_KEY in your .env file."
-        )
-        st.info("Run: ./update_langsmith_key.sh YOUR_LANGSMITH_API_KEY")
-    elif langsmith_enabled:
-        project_name = os.environ.get("LANGCHAIN_PROJECT", "default")
-        st.success(f"LangSmith tracing enabled for project: {project_name}")
-        st.markdown(
-            f"[View traces](https://smith.langchain.com/projects/{project_name})"
-        )
+    weather_status = "✅ Connected" if weather_available else "❌ Not Connected"
+    st.sidebar.text(f"OpenWeather API: {weather_status}")
+    if not weather_available:
+        st.sidebar.info("Run: ./update_weather_key.sh YOUR_OPENWEATHER_API_KEY")
+
+    # LangSmith API status
+    langsmith_available = langsmith_client is not None
+    langsmith_status = "✅ Connected" if langsmith_available else "❌ Not Connected"
+    st.sidebar.text(f"LangSmith API: {langsmith_status}")
+    if not langsmith_available:
+        st.sidebar.info("Run: ./update_langsmith_key.sh YOUR_LANGSMITH_API_KEY")
+
+    # Pinecone status
+    pinecone_available = (
+        pinecone_client is not None and pinecone_client.index is not None
+    )
+    pinecone_status = "✅ Connected" if pinecone_available else "❌ Not Connected"
+    st.sidebar.text(f"Pinecone Vector DB: {pinecone_status}")
+
+    # LangSmith integration
+    has_langsmith_key = is_langsmith_key_set()
+    langsmith_enabled = st.checkbox(
+        "Enable LangSmith tracing",
+        value=has_langsmith_key,
+        help="Record and trace your AI interactions in LangSmith for debugging and analysis",
+    )
+
+    if langsmith_enabled:
+        if not has_langsmith_key:
+            st.warning(
+                "LangSmith API key not found. Set LANGCHAIN_API_KEY in your .env file."
+            )
+            st.info("Run: ./update_langsmith_key.sh YOUR_LANGSMITH_API_KEY")
+            langsmith_enabled = False
+        elif langsmith_client is None:
+            st.warning("LangSmith client initialization failed. Check your API key.")
+            langsmith_enabled = False
+        else:
+            project_name = os.environ.get("LANGCHAIN_PROJECT", "default")
+            st.success(f"LangSmith tracing enabled for project: {project_name}")
+            st.markdown(
+                f"[View traces](https://smith.langchain.com/projects/{project_name})"
+            )
 
     # Pinecone integration
     pinecone_available = (
@@ -199,13 +266,52 @@ if prompt := st.chat_input("Ask a question or request an analysis..."):
                 # Check if web search is enabled and Tavily client is available
                 web_search_results = None
                 search_metadata = {}
+                search_successful = False
+
                 if enable_web_search and tavily_client is not None:
                     try:
                         with st.status("Searching the web for information..."):
-                            search_result = tavily_client.search(
-                                query=prompt, search_depth="advanced", max_results=3
+                            # For real-time data like weather, we need to ensure search is enabled
+                            is_realtime_query = any(
+                                keyword in prompt.lower()
+                                for keyword in [
+                                    "weather",
+                                    "temperature",
+                                    "forecast",
+                                    "current",
+                                    "now",
+                                    "today",
+                                ]
                             )
-                            if "error" in search_result:
+
+                            # Use advanced search for real-time queries
+                            search_depth = "advanced" if is_realtime_query else "basic"
+                            max_results = 5 if is_realtime_query else 3
+
+                            if is_realtime_query:
+                                st.info(
+                                    "Detected real-time information query. Using advanced search."
+                                )
+
+                            search_result = tavily_client.search(
+                                query=prompt,
+                                search_depth=search_depth,
+                                max_results=max_results,
+                            )
+
+                            if (
+                                isinstance(search_result, dict)
+                                and search_result.get("error")
+                                and "401" in str(search_result.get("error"))
+                            ):
+                                st.error(
+                                    "Tavily API key is invalid or expired. Web search functionality is disabled."
+                                )
+                                st.info(
+                                    "To get a valid API key, visit https://tavily.com/ and run: ./update_tavily_key.sh YOUR_NEW_API_KEY"
+                                )
+                                web_search_results = "Note: Web search is currently unavailable. Please provide a valid Tavily API key."
+                            elif "error" in search_result:
                                 st.warning(
                                     f"Web search issue: {search_result.get('error')}"
                                 )
@@ -299,6 +405,87 @@ if prompt := st.chat_input("Ask a question or request an analysis..."):
                     messages.append(
                         {"role": "system", "content": vector_search_results}
                     )
+
+                # Check if this is a weather query
+                is_weather_query = any(
+                    keyword in prompt.lower()
+                    for keyword in [
+                        "weather",
+                        "temperature",
+                        "forecast",
+                        "humidity",
+                        "rain",
+                        "sunny",
+                        "snow",
+                    ]
+                )
+
+                # Add weather information for weather queries
+                if is_weather_query:
+                    # Extract location from prompt
+                    location = None
+                    location_words = ["in", "at", "for", "of"]
+                    words = prompt.split()
+
+                    for i, word in enumerate(words):
+                        if word.lower() in location_words and i < len(words) - 1:
+                            # Extract what appears to be the location after prepositions
+                            location = words[i + 1]
+                            # Look for multi-word locations (capitalized words)
+                            j = i + 2
+                            while j < len(words) and (
+                                words[j][0].isupper()
+                                or words[j].lower() in ["and", "of", "the"]
+                            ):
+                                location += " " + words[j]
+                                j += 1
+                            break
+
+                    # Try to get weather directly if we have a location and a weather client
+                    weather_available = False
+                    if location:
+                        if weather_client and weather_client.api_key:
+                            with st.status(f"Fetching weather data for {location}..."):
+                                weather_data = weather_client.get_current_weather(
+                                    location
+                                )
+
+                                if "error" not in weather_data:
+                                    weather_available = True
+                                    weather_msg = weather_client.format_weather_message(
+                                        weather_data
+                                    )
+                                    # Add the weather data as a special system message
+                                    messages.append(
+                                        {
+                                            "role": "system",
+                                            "content": f"Here is the current weather information:\n\n{weather_msg}\n\nPlease use this information to answer the user's query.",
+                                        }
+                                    )
+
+                        # Handle case where weather data is not available
+                        if not weather_available:
+                            # Check if web search provided any results
+                            if (
+                                not web_search_results
+                                or "Note: Web search" in web_search_results
+                            ):
+                                weather_fallback_msg = f"""
+                                The user is asking about weather in {location}, but:
+                                1. No direct weather data is available - OpenWeather API key is not set
+                                2. Web search is not available or returned no results
+                                
+                                Please respond with:
+                                "I don't have access to current weather data for {location}. To get accurate weather information,
+                                I recommend checking a weather service like Weather.com, AccuWeather, or your local weather app.
+                                
+                                To enable weather data in this app, an administrator can add an OpenWeatherMap API key 
+                                (get one at https://openweathermap.org/) by running:
+                                ./update_weather_key.sh YOUR_OPENWEATHER_API_KEY"
+                                """
+                                messages.append(
+                                    {"role": "system", "content": weather_fallback_msg}
+                                )
 
                 # Get response from the model based on selected provider
                 if model_provider == "Ollama":

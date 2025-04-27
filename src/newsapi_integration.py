@@ -149,7 +149,12 @@ def chunk_articles(
         Tuple of (document chunks, metadata)
     """
     try:
-        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        # Use updated import path
+        try:
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+        except ImportError:
+            # Fallback to old import path
+            from langchain.text_splitter import RecursiveCharacterTextSplitter
 
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size, chunk_overlap=chunk_overlap

@@ -33,7 +33,10 @@ Ishtar AI is a comprehensive AI platform for analyzing and providing insights on
    poetry install
    ```
 
-3. Set up environment variables by creating a `.env` file:
+3. Set up environment variables by creating a `.env` file or using the provided scripts:
+
+   See [API_SETUP.md](API_SETUP.md) for detailed instructions on setting up API keys.
+
    ```
    # Required API keys
    OPENAI_API_KEY=your_openai_key
