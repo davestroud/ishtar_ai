@@ -20,6 +20,13 @@ print_help() {
     echo "  ./poetry_setup.sh --install --tavily-key your_tavily_key"
     echo "  ./poetry_setup.sh --docker"
     echo "  ./poetry_setup.sh --run"
+    echo ""
+    echo "API Key Management:"
+    echo "  You can also use the scripts in the 'scripts/' directory to manage API keys individually:"
+    echo "  ./scripts/update_tavily_key.sh YOUR_TAVILY_API_KEY"
+    echo "  ./scripts/update_langsmith_key.sh YOUR_LANGSMITH_API_KEY"
+    echo "  ./scripts/update_pinecone.sh --api-key YOUR_PINECONE_API_KEY --host YOUR_PINECONE_HOST"
+    echo "  ./scripts/update_weather_key.sh YOUR_OPENWEATHER_API_KEY"
 }
 
 update_env_var() {

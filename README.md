@@ -57,6 +57,14 @@ Ishtar AI is a comprehensive AI platform for analyzing and providing insights on
    OLLAMA_HOST=host.docker.internal
    ```
 
+   Alternatively, use the utility scripts to set API keys:
+   ```bash
+   # Set API keys individually
+   ./scripts/update_tavily_key.sh YOUR_TAVILY_API_KEY
+   ./scripts/update_langsmith_key.sh YOUR_LANGSMITH_API_KEY
+   ./scripts/update_pinecone.sh --api-key YOUR_API_KEY --host YOUR_HOST
+   ```
+
    > Note: The helper script `run_ishtar.sh` will automatically set a default value for `LANGCHAIN_PROJECT` but you must provide your own `LANGCHAIN_API_KEY`.
 
 ## Running the Application
@@ -130,11 +138,35 @@ ishtar_ai/
 │   ├── newsapi_integration.py    # News API integration
 │   ├── pinecone_integration.py   # Pinecone vector DB
 │   └── tavily_search.py          # Tavily search API
+├── scripts/           # Utility scripts
+│   ├── update_*.sh    # API key update scripts
+│   └── env/           # Environment management scripts
 ├── utils/
 │   └── news_fetcher.py           # Command-line news fetcher
 └── static/
     └── index.html                # WebSocket demo interface
 ```
+
+### Utility Scripts
+
+The project includes several utility scripts organized in directories:
+
+- **Root Directory Scripts**:
+  - `setup.sh` - Main setup script for the application
+  - `poetry_setup.sh` - Alternative setup script using Poetry
+  - `run_ishtar.sh` - Script to run the application in different modes
+
+- **API Key Management** (`scripts/`):
+  - `update_langsmith_key.sh` - Update LangSmith API key
+  - `update_pinecone.sh` - Update Pinecone credentials
+  - `update_tavily_key.sh` - Update Tavily API key
+  - `update_weather_key.sh` - Update OpenWeather API key
+
+- **Environment Scripts** (`scripts/env/`):
+  - `restart_app.sh` - Restart Ollama container and run Streamlit
+  - `run_with_tavily.sh` - Run with Tavily web search integration
+
+These scripts have symbolic links in the project root for easy access.
 
 ## ASGI API
 
