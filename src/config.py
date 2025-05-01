@@ -26,9 +26,23 @@ except ImportError:
         def __init__(self, **data):
             # Load environment variables for fields
             env_data = {}
-            for field_name, field in self.__class__.__annotations__.items():
-                field_info = self.__class__.__fields__[field_name]
-                env_var = field_info.field_info.extra.get("env", field_name.upper())
+            for field_name, field_info in self.__class__.__fields__.items():
+                # Get env var name from field extra info or use uppercase field name
+                env_var = None
+
+                # Try different ways to access the env attribute based on Pydantic version
+                if hasattr(field_info, "field_info") and hasattr(
+                    field_info.field_info, "extra"
+                ):
+                    # Pydantic v2 style
+                    env_var = field_info.field_info.extra.get("env", field_name.upper())
+                elif hasattr(field_info, "extra"):
+                    # Pydantic v1 style
+                    env_var = field_info.extra.get("env", field_name.upper())
+                else:
+                    # Fallback to uppercase field name
+                    env_var = field_name.upper()
+
                 if env_var in os.environ:
                     env_data[field_name] = os.environ[env_var]
 
@@ -57,12 +71,11 @@ else:
 
 
 class IshtarSettings(BaseSettings):
-    # Ollama API Configuration
-    ollama_host: str = Field(default="localhost", env="OLLAMA_HOST")
-    ollama_port: str = Field(default="11434", env="OLLAMA_PORT")
+    # Hugging Face configuration
+    huggingface_token: Optional[str] = Field(default=None, env="HUGGING_FACE_TOKEN")
 
     # Default model to use
-    default_model: str = Field(default="llama3", env="DEFAULT_MODEL")
+    default_model: str = Field(default="google/gemma-2b", env="DEFAULT_MODEL")
 
     # Generation parameters
     default_temperature: float = Field(default=0.7, env="DEFAULT_TEMPERATURE")
@@ -100,10 +113,6 @@ class IshtarSettings(BaseSettings):
         # Allow extra fields to avoid validation errors for new environment variables
         extra = "allow"
 
-    @property
-    def ollama_base_url(self) -> str:
-        return f"http://{self.ollama_host}:{self.ollama_port}"
-
     @root_validator(skip_on_failure=True)
     def validate_api_keys(cls, values):
         # Check Tavily API key
@@ -128,6 +137,18 @@ class IshtarSettings(BaseSettings):
             print("LangSmith tracing will be disabled", file=sys.stderr)
             values["langsmith_tracing"] = False
 
+        # Check Hugging Face token
+        if values.get("huggingface_token"):
+            print(
+                f"Hugging Face token found (length: {len(values['huggingface_token'])})",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "No Hugging Face token found in environment variables", file=sys.stderr
+            )
+            print("Some models may not be accessible", file=sys.stderr)
+
         return values
 
 
@@ -138,7 +159,6 @@ settings = IshtarSettings()
 # Configure the client (for backward compatibility)
 def get_client_config():
     return {
-        "base_url": settings.ollama_base_url,
         "default_model": settings.default_model,
         "default_params": {
             "temperature": settings.default_temperature,

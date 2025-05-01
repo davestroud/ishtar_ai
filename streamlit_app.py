@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import streamlit as st
-from ollama_client import OllamaClient
 import json
 import os
 from src.tavily_search import TavilySearch
-from src.langsmith_integration import get_langsmith_client, trace_ollama_chat
+from src.langsmith_integration import get_langsmith_client
 from src.pinecone_integration import get_pinecone_client
-from src.weather_api import WeatherAPI
 import openai
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import huggingface_hub
 
 # Page configuration
 st.set_page_config(page_title="Ishtar AI", page_icon="🔍", layout="wide")
@@ -15,11 +15,19 @@ st.set_page_config(page_title="Ishtar AI", page_icon="🔍", layout="wide")
 # Configure API keys
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
+# Set Hugging Face token if available
+hf_token = os.environ.get("HUGGING_FACE_TOKEN")
+if hf_token:
+    huggingface_hub.login(token=hf_token, add_to_git_credential=False)
+
 # Import langchain_community for embeddings to avoid deprecation warnings
 try:
     from langchain_community.embeddings import OpenAIEmbeddings
+    from src.weather_api import WeatherAPI
 except ImportError:
     from langchain.embeddings import OpenAIEmbeddings
+
+    WeatherAPI = None
 
 
 def is_langsmith_key_set():
@@ -35,15 +43,23 @@ def is_langsmith_key_set():
             for line in f:
                 if line.strip().startswith("LANGCHAIN_API_KEY="):
                     key = line.strip().split("=", 1)[1].strip()
-                    if key and key != "your_langsmith_key":
+                    if key and key != "your_langsmith_key" and not key.startswith("#"):
                         return True
     return False
 
 
 # Initialize clients
 @st.cache_resource
-def get_client():
-    return OllamaClient()
+def get_available_hf_models():
+    """Get a list of available models from Hugging Face"""
+    return [
+        "google/gemma-2b",
+        "mistralai/Mistral-7B-Instruct-v0.2",
+        "meta-llama/Llama-2-7b-chat-hf",
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "microsoft/phi-2",
+        "HuggingFaceH4/zephyr-7b-beta",
+    ]
 
 
 @st.cache_resource
@@ -59,24 +75,57 @@ def get_tavily_client():
 
 @st.cache_resource
 def get_ls_client():
-    return get_langsmith_client()
+    if is_langsmith_key_set():
+        try:
+            return get_langsmith_client()
+        except Exception as e:
+            st.warning(f"Error initializing LangSmith client: {str(e)}")
+    return None
 
 
 @st.cache_resource
 def get_pc_client():
-    return get_pinecone_client()
+    try:
+        return get_pinecone_client()
+    except Exception as e:
+        st.sidebar.warning(f"Pinecone client initialization failed: {str(e)}")
+        return None
 
 
 @st.cache_resource
 def get_weather_client():
-    return WeatherAPI()
+    if WeatherAPI is not None:
+        try:
+            return WeatherAPI()
+        except Exception as e:
+            st.sidebar.warning(f"Weather client initialization failed: {str(e)}")
+    return None
 
 
-client = get_client()
-tavily_client = get_tavily_client()
-langsmith_client = get_ls_client()
-pinecone_client = get_pc_client()
-weather_client = get_weather_client()
+# Initialize clients, gracefully handling failures
+try:
+    tavily_client = get_tavily_client()
+except Exception as e:
+    st.warning(f"Failed to initialize Tavily client: {str(e)}")
+    tavily_client = None
+
+try:
+    langsmith_client = get_ls_client()
+except Exception as e:
+    st.warning(f"Failed to initialize LangSmith client: {str(e)}")
+    langsmith_client = None
+
+try:
+    pinecone_client = get_pc_client()
+except Exception as e:
+    st.warning(f"Failed to initialize Pinecone client: {str(e)}")
+    pinecone_client = None
+
+try:
+    weather_client = get_weather_client()
+except Exception as e:
+    st.warning(f"Failed to initialize Weather client: {str(e)}")
+    weather_client = None
 
 # Page title and description
 st.title("🔍 Ishtar AI")
@@ -101,27 +150,23 @@ with st.sidebar:
     # Select model provider
     model_provider = st.radio(
         "Select Model Provider",
-        ["Ollama", "OpenAI"],
+        ["Hugging Face", "OpenAI"],
         index=0,
         help="Choose which LLM provider to use",
     )
 
     # Model selection based on provider
-    if model_provider == "Ollama":
-        try:
-            models_response = client.list_models()
-            model_names = [
-                model.get("name") for model in models_response.get("models", [])
-            ]
+    if model_provider == "Hugging Face":
+        model_names = get_available_hf_models()
+        selected_model = st.selectbox("Select Hugging Face Model", model_names)
 
-            if not model_names:
-                st.warning("No Ollama models found. Please pull a model first.")
-                model_names = ["llama3"]  # Default fallback
-        except Exception as e:
-            st.error(f"Error fetching Ollama models: {str(e)}")
-            model_names = ["llama3"]  # Default fallback
-
-        selected_model = st.selectbox("Select Ollama Model", model_names)
+        if hf_token is None:
+            st.warning(
+                "No Hugging Face token found. Some models may not be accessible."
+            )
+            st.info(
+                "Add HUGGING_FACE_TOKEN to your .env file if needed for accessing restricted models."
+            )
     else:
         # OpenAI models
         openai_models = ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
@@ -143,7 +188,7 @@ with st.sidebar:
     tavily_status = "✅ Connected" if tavily_available else "❌ Not Connected"
     st.sidebar.text(f"Tavily Search API: {tavily_status}")
     if not tavily_available:
-        st.sidebar.info("Run: ./update_tavily_key.sh YOUR_TAVILY_API_KEY")
+        st.sidebar.info("Add TAVILY_API_KEY to your .env file")
 
     # OpenWeather API status
     weather_available = (
@@ -152,14 +197,14 @@ with st.sidebar:
     weather_status = "✅ Connected" if weather_available else "❌ Not Connected"
     st.sidebar.text(f"OpenWeather API: {weather_status}")
     if not weather_available:
-        st.sidebar.info("Run: ./update_weather_key.sh YOUR_OPENWEATHER_API_KEY")
+        st.sidebar.info("Add OPENWEATHER_API_KEY to your .env file")
 
     # LangSmith API status
     langsmith_available = langsmith_client is not None
     langsmith_status = "✅ Connected" if langsmith_available else "❌ Not Connected"
     st.sidebar.text(f"LangSmith API: {langsmith_status}")
     if not langsmith_available:
-        st.sidebar.info("Run: ./update_langsmith_key.sh YOUR_LANGSMITH_API_KEY")
+        st.sidebar.info("Add LANGCHAIN_API_KEY to your .env file")
 
     # Pinecone status
     pinecone_available = (
@@ -181,7 +226,7 @@ with st.sidebar:
             st.warning(
                 "LangSmith API key not found. Set LANGCHAIN_API_KEY in your .env file."
             )
-            st.info("Run: ./update_langsmith_key.sh YOUR_LANGSMITH_API_KEY")
+            st.info("LangSmith is optional, you can continue without it.")
             langsmith_enabled = False
         elif langsmith_client is None:
             st.warning("LangSmith client initialization failed. Check your API key.")
@@ -200,9 +245,8 @@ with st.sidebar:
     if pinecone_available:
         st.success(f"Pinecone connected to index: {pinecone_client.index_name}")
     else:
-        st.warning(
-            "Pinecone connection not available. Check your API key and host in the .env file."
-        )
+        st.warning("Pinecone connection not available. Vector search will be disabled.")
+        st.info("To enable vector search, add your Pinecone API key to the .env file.")
 
     # Web search option
     tavily_available = tavily_client is not None
@@ -210,27 +254,12 @@ with st.sidebar:
         "Enable web search", value=tavily_available, disabled=not tavily_available
     )
     if not tavily_available:
-        st.warning(
-            "Tavily API key not found or invalid. Set a valid TAVILY_API_KEY in your .env file."
-        )
-        st.info("Run: ./update_tavily_key.sh YOUR_TAVILY_API_KEY")
+        st.warning("Tavily API key not found or invalid. Web search is disabled.")
+        st.info("Add TAVILY_API_KEY to your .env file")
     elif enable_web_search:
         st.success(
             "Web search is enabled. Your queries will use Tavily to retrieve up-to-date information."
         )
-
-    # Model pulling section (Ollama only)
-    if model_provider == "Ollama":
-        st.subheader("Pull a new model")
-        new_model = st.text_input("Model name (e.g., llama3, mistral, gemma:7b)")
-
-        if st.button("Pull Model"):
-            with st.spinner(f"Pulling model {new_model}..."):
-                try:
-                    result = client.pull_model(new_model)
-                    st.success(f"Model pulled successfully: {new_model}")
-                except Exception as e:
-                    st.error(f"Error pulling model: {str(e)}")
 
     # Advanced settings
     st.subheader("Advanced Settings")
@@ -250,6 +279,24 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+
+# Function to format prompt based on model
+def format_prompt_for_model(prompt, model_name):
+    """Format prompt based on the model's expected format"""
+    if "mistral" in model_name.lower():
+        # Mistral format
+        return f"<s>[INST] {prompt} [/INST]"
+    elif "llama" in model_name.lower():
+        # Llama format
+        return f"<s>[INST] {prompt} [/INST]"
+    elif "gemma" in model_name.lower():
+        # Gemma format
+        return f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model"
+    else:
+        # Default format
+        return f"USER: {prompt}\nASSISTANT:"
+
+
 # Chat input
 if prompt := st.chat_input("Ask a question or request an analysis..."):
     # Add user message to chat history
@@ -261,207 +308,234 @@ if prompt := st.chat_input("Ask a question or request an analysis..."):
 
     # Get response from the model
     with st.chat_message("assistant"):
-        with st.spinner("Analyzing..."):
-            try:
-                # Check if web search is enabled and Tavily client is available
-                web_search_results = None
-                search_metadata = {}
-                search_successful = False
+        if model_provider == "OpenAI" and not openai.api_key:
+            st.error("⚠️ OpenAI API key is not set. Please add it to your .env file.")
+            st.info("Set the OPENAI_API_KEY environment variable")
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": "⚠️ OpenAI API key is not set. Please add it to your .env file.",
+                }
+            )
+        else:
+            with st.spinner("Analyzing..."):
+                try:
+                    # Check if web search is enabled and Tavily client is available
+                    web_search_results = None
+                    search_metadata = {}
+                    search_successful = False
 
-                if enable_web_search and tavily_client is not None:
-                    try:
-                        with st.status("Searching the web for information..."):
-                            # For real-time data like weather, we need to ensure search is enabled
-                            is_realtime_query = any(
-                                keyword in prompt.lower()
-                                for keyword in [
-                                    "weather",
-                                    "temperature",
-                                    "forecast",
-                                    "current",
-                                    "now",
-                                    "today",
-                                ]
-                            )
-
-                            # Use advanced search for real-time queries
-                            search_depth = "advanced" if is_realtime_query else "basic"
-                            max_results = 5 if is_realtime_query else 3
-
-                            if is_realtime_query:
-                                st.info(
-                                    "Detected real-time information query. Using advanced search."
+                    if enable_web_search and tavily_client is not None:
+                        try:
+                            with st.status("Searching the web for information..."):
+                                # For real-time data like weather, we need to ensure search is enabled
+                                is_realtime_query = any(
+                                    keyword in prompt.lower()
+                                    for keyword in [
+                                        "weather",
+                                        "temperature",
+                                        "forecast",
+                                        "current",
+                                        "now",
+                                        "today",
+                                    ]
                                 )
 
-                            search_result = tavily_client.search(
-                                query=prompt,
-                                search_depth=search_depth,
-                                max_results=max_results,
-                            )
+                                # Use advanced search for real-time queries
+                                search_depth = (
+                                    "advanced" if is_realtime_query else "basic"
+                                )
+                                max_results = 5 if is_realtime_query else 3
 
-                            if (
-                                isinstance(search_result, dict)
-                                and search_result.get("error")
-                                and "401" in str(search_result.get("error"))
-                            ):
+                                if is_realtime_query:
+                                    st.info(
+                                        "Detected real-time information query. Using advanced search."
+                                    )
+
+                                search_result = tavily_client.search(
+                                    query=prompt,
+                                    search_depth=search_depth,
+                                    max_results=max_results,
+                                )
+
+                                if (
+                                    isinstance(search_result, dict)
+                                    and search_result.get("error")
+                                    and "401" in str(search_result.get("error"))
+                                ):
+                                    st.error(
+                                        "Tavily API key is invalid or expired. Web search functionality is disabled."
+                                    )
+                                    st.info(
+                                        "To get a valid API key, visit https://tavily.com/"
+                                    )
+                                    web_search_results = "Note: Web search is currently unavailable. Please provide a valid Tavily API key."
+                                elif "error" in search_result:
+                                    st.warning(
+                                        f"Web search issue: {search_result.get('error')}"
+                                    )
+                                    web_search_results = f"Note: Web search was attempted but encountered an issue: {search_result.get('error')}"
+                                    search_metadata["search_error"] = search_result.get(
+                                        "error"
+                                    )
+                                elif search_result and "results" in search_result:
+                                    web_search_results = "Web search results:\n\n"
+                                    search_metadata["search_success"] = True
+                                    search_metadata["result_count"] = len(
+                                        search_result["results"]
+                                    )
+
+                                    for i, result in enumerate(
+                                        search_result["results"], 1
+                                    ):
+                                        title = result.get("title", "No title")
+                                        content = result.get(
+                                            "content", "No content available"
+                                        )
+                                        url = result.get("url", "")
+                                        web_search_results += f"{i}. **{title}**\n{content}\n[Source]({url})\n\n"
+                                        # Store source URLs in metadata
+                                        search_metadata[f"source_url_{i}"] = url
+                                else:
+                                    st.info("Web search did not return any results")
+                                    web_search_results = "Note: Web search was attempted but did not return any results."
+                                    search_metadata["search_no_results"] = True
+                        except Exception as e:
+                            err_msg = str(e)
+                            if "401" in err_msg and "invalid API key" in err_msg:
                                 st.error(
-                                    "Tavily API key is invalid or expired. Web search functionality is disabled."
+                                    "Invalid Tavily API key. Please update your API key in the .env file."
                                 )
-                                st.info(
-                                    "To get a valid API key, visit https://tavily.com/ and run: ./update_tavily_key.sh YOUR_NEW_API_KEY"
-                                )
-                                web_search_results = "Note: Web search is currently unavailable. Please provide a valid Tavily API key."
-                            elif "error" in search_result:
-                                st.warning(
-                                    f"Web search issue: {search_result.get('error')}"
-                                )
-                                web_search_results = f"Note: Web search was attempted but encountered an issue: {search_result.get('error')}"
-                                search_metadata["search_error"] = search_result.get(
-                                    "error"
-                                )
-                            elif search_result and "results" in search_result:
-                                web_search_results = "Web search results:\n\n"
-                                search_metadata["search_success"] = True
-                                search_metadata["result_count"] = len(
-                                    search_result["results"]
-                                )
-
-                                for i, result in enumerate(search_result["results"], 1):
-                                    title = result.get("title", "No title")
-                                    content = result.get(
-                                        "content", "No content available"
-                                    )
-                                    url = result.get("url", "")
-                                    web_search_results += f"{i}. **{title}**\n{content}\n[Source]({url})\n\n"
-                                    # Store source URLs in metadata
-                                    search_metadata[f"source_url_{i}"] = url
                             else:
-                                st.info("Web search did not return any results")
-                                web_search_results = "Note: Web search was attempted but did not return any results."
-                                search_metadata["search_no_results"] = True
-                    except Exception as e:
-                        err_msg = str(e)
-                        if "401" in err_msg and "invalid API key" in err_msg:
-                            st.error(
-                                "Invalid Tavily API key. Please update your API key in the .env file."
+                                st.error(f"Web search error: {err_msg}")
+                            web_search_results = (
+                                f"Note: Web search failed due to an error: {err_msg}"
                             )
-                            st.info("You can run: ./update_tavily_key.sh YOUR_API_KEY")
-                        else:
-                            st.error(f"Web search error: {err_msg}")
-                        web_search_results = (
-                            f"Note: Web search failed due to an error: {err_msg}"
-                        )
-                        search_metadata["search_error"] = err_msg
+                            search_metadata["search_error"] = err_msg
 
-                # Check if pinecone is available to provide vector search results
-                vector_search_results = None
-                if pinecone_available and model_provider == "OpenAI" and openai.api_key:
-                    try:
-                        with st.status("Searching vector database..."):
-                            # Get embeddings from OpenAI
-                            response = openai.embeddings.create(
-                                input=prompt, model="text-embedding-3-small"
-                            )
-                            embedding = response.data[0].embedding
+                    # Check if pinecone is available to provide vector search results
+                    vector_search_results = None
+                    if (
+                        pinecone_available
+                        and model_provider == "OpenAI"
+                        and openai.api_key
+                    ):
+                        try:
+                            with st.status("Searching vector database..."):
+                                # Get embeddings from OpenAI
+                                response = openai.embeddings.create(
+                                    input=prompt, model="text-embedding-3-small"
+                                )
+                                embedding = response.data[0].embedding
 
-                            # Query Pinecone
-                            results = pinecone_client.query(
-                                vector=embedding, top_k=3, include_metadata=True
-                            )
+                                # Query Pinecone
+                                results = pinecone_client.query(
+                                    vector=embedding, top_k=3, include_metadata=True
+                                )
 
-                            if results:
-                                vector_search_results = "Vector database results:\n\n"
-                                for i, result in enumerate(results, 1):
-                                    title = result.get("metadata", {}).get(
-                                        "title", "No title"
+                                if results:
+                                    vector_search_results = (
+                                        "Vector database results:\n\n"
                                     )
-                                    content = result.get("metadata", {}).get(
-                                        "content", "No content available"
-                                    )
-                                    url = result.get("metadata", {}).get("url", "")
-                                    score = result.get("score", 0)
-                                    vector_search_results += f"{i}. **{title}** (Relevance: {score:.2f})\n{content}\n"
-                                    if url:
-                                        vector_search_results += f"[Source]({url})\n\n"
-                                    else:
-                                        vector_search_results += "\n"
-                            else:
-                                vector_search_results = "Note: No relevant information found in the vector database."
-                    except Exception as e:
-                        st.error(f"Vector search error: {str(e)}")
-                        vector_search_results = (
-                            f"Note: Vector search failed due to an error: {str(e)}"
+                                    for i, result in enumerate(results, 1):
+                                        title = result.get("metadata", {}).get(
+                                            "title", "No title"
+                                        )
+                                        content = result.get("metadata", {}).get(
+                                            "content", "No content available"
+                                        )
+                                        url = result.get("metadata", {}).get("url", "")
+                                        score = result.get("score", 0)
+                                        vector_search_results += f"{i}. **{title}** (Relevance: {score:.2f})\n{content}\n"
+                                        if url:
+                                            vector_search_results += (
+                                                f"[Source]({url})\n\n"
+                                            )
+                                        else:
+                                            vector_search_results += "\n"
+                                else:
+                                    vector_search_results = "Note: No relevant information found in the vector database."
+                        except Exception as e:
+                            st.error(f"Vector search error: {str(e)}")
+                            vector_search_results = (
+                                f"Note: Vector search failed due to an error: {str(e)}"
+                            )
+
+                    # Create the prompt for the LLM
+                    messages = st.session_state.messages.copy()
+
+                    # Add web search results to the prompt if available
+                    if web_search_results:
+                        messages.append(
+                            {"role": "system", "content": web_search_results}
                         )
 
-                # Create the prompt for the LLM
-                messages = st.session_state.messages.copy()
+                    # Add vector search results to the prompt if available
+                    if vector_search_results:
+                        messages.append(
+                            {"role": "system", "content": vector_search_results}
+                        )
 
-                # Add web search results to the prompt if available
-                if web_search_results:
-                    messages.append({"role": "system", "content": web_search_results})
-
-                # Add vector search results to the prompt if available
-                if vector_search_results:
-                    messages.append(
-                        {"role": "system", "content": vector_search_results}
+                    # Check if this is a weather query
+                    is_weather_query = any(
+                        keyword in prompt.lower()
+                        for keyword in [
+                            "weather",
+                            "temperature",
+                            "forecast",
+                            "humidity",
+                            "rain",
+                            "sunny",
+                            "snow",
+                        ]
                     )
 
-                # Check if this is a weather query
-                is_weather_query = any(
-                    keyword in prompt.lower()
-                    for keyword in [
-                        "weather",
-                        "temperature",
-                        "forecast",
-                        "humidity",
-                        "rain",
-                        "sunny",
-                        "snow",
-                    ]
-                )
+                    # Add weather information for weather queries
+                    if is_weather_query:
+                        # Extract location from prompt
+                        location = None
+                        location_words = ["in", "at", "for", "of"]
+                        words = prompt.split()
 
-                # Add weather information for weather queries
-                if is_weather_query:
-                    # Extract location from prompt
-                    location = None
-                    location_words = ["in", "at", "for", "of"]
-                    words = prompt.split()
+                        for i, word in enumerate(words):
+                            if word.lower() in location_words and i < len(words) - 1:
+                                # Extract what appears to be the location after prepositions
+                                location = words[i + 1]
+                                # Look for multi-word locations (capitalized words)
+                                j = i + 2
+                                while j < len(words) and (
+                                    words[j][0].isupper()
+                                    or words[j].lower() in ["and", "of", "the"]
+                                ):
+                                    location += " " + words[j]
+                                    j += 1
+                                break
 
-                    for i, word in enumerate(words):
-                        if word.lower() in location_words and i < len(words) - 1:
-                            # Extract what appears to be the location after prepositions
-                            location = words[i + 1]
-                            # Look for multi-word locations (capitalized words)
-                            j = i + 2
-                            while j < len(words) and (
-                                words[j][0].isupper()
-                                or words[j].lower() in ["and", "of", "the"]
-                            ):
-                                location += " " + words[j]
-                                j += 1
-                            break
-
-                    # Try to get weather directly if we have a location and a weather client
-                    weather_available = False
-                    if location:
-                        if weather_client and weather_client.api_key:
-                            with st.status(f"Fetching weather data for {location}..."):
-                                weather_data = weather_client.get_current_weather(
-                                    location
-                                )
-
-                                if "error" not in weather_data:
-                                    weather_available = True
-                                    weather_msg = weather_client.format_weather_message(
-                                        weather_data
+                        # Try to get weather directly if we have a location and a weather client
+                        weather_available = False
+                        if location:
+                            if weather_client and weather_client.api_key:
+                                with st.status(
+                                    f"Fetching weather data for {location}..."
+                                ):
+                                    weather_data = weather_client.get_current_weather(
+                                        location
                                     )
-                                    # Add the weather data as a special system message
-                                    messages.append(
-                                        {
-                                            "role": "system",
-                                            "content": f"Here is the current weather information:\n\n{weather_msg}\n\nPlease use this information to answer the user's query.",
-                                        }
-                                    )
+
+                                    if "error" not in weather_data:
+                                        weather_available = True
+                                        weather_msg = (
+                                            weather_client.format_weather_message(
+                                                weather_data
+                                            )
+                                        )
+                                        # Add the weather data as a special system message
+                                        messages.append(
+                                            {
+                                                "role": "system",
+                                                "content": f"Here is the current weather information:\n\n{weather_msg}\n\nPlease use this information to answer the user's query.",
+                                            }
+                                        )
 
                         # Handle case where weather data is not available
                         if not weather_available:
@@ -480,81 +554,126 @@ if prompt := st.chat_input("Ask a question or request an analysis..."):
                                 I recommend checking a weather service like Weather.com, AccuWeather, or your local weather app.
                                 
                                 To enable weather data in this app, an administrator can add an OpenWeatherMap API key 
-                                (get one at https://openweathermap.org/) by running:
-                                ./update_weather_key.sh YOUR_OPENWEATHER_API_KEY"
+                                (get one at https://openweathermap.org/)."
                                 """
                                 messages.append(
                                     {"role": "system", "content": weather_fallback_msg}
                                 )
 
-                # Get response from the model based on selected provider
-                if model_provider == "Ollama":
-                    response = client.chat(
-                        messages=messages,
-                        model=selected_model,
-                        options={"temperature": temperature, "max_tokens": max_tokens},
-                    )
-                    assistant_response = response.get("message", {}).get("content", "")
-                else:
-                    # Use OpenAI
-                    openai_messages = []
-                    for msg in messages:
-                        # Convert format if needed
-                        openai_messages.append(
-                            {"role": msg["role"], "content": msg["content"]}
-                        )
+                    # Get response from the model based on selected provider
+                    if model_provider == "Hugging Face":
+                        with st.status(f"Loading {selected_model}..."):
+                            # Initialize tokenizer
+                            tokenizer = AutoTokenizer.from_pretrained(selected_model)
 
-                    openai_response = openai.chat.completions.create(
-                        model=selected_model,
-                        messages=openai_messages,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                    )
-                    assistant_response = openai_response.choices[0].message.content
+                            # Initialize model with proper settings
+                            model = AutoModelForCausalLM.from_pretrained(
+                                selected_model,
+                                device_map="auto",
+                                torch_dtype="auto",
+                                trust_remote_code=True,
+                            )
 
-                # If debug mode is enabled, show the raw response
-                if debug_mode:
-                    st.markdown("### Debug: Raw Response")
-                    if model_provider == "Ollama":
-                        st.json(response)
+                            # Format the prompt for the model
+                            formatted_prompt = format_prompt_for_model(
+                                prompt, selected_model
+                            )
+
+                            # Create a text generation pipeline
+                            text_generator = pipeline(
+                                "text-generation",
+                                model=model,
+                                tokenizer=tokenizer,
+                                max_new_tokens=max_tokens,
+                                temperature=temperature,
+                                repetition_penalty=1.1,
+                                do_sample=True,
+                            )
+
+                            # Generate response
+                            result = text_generator(formatted_prompt)
+                            assistant_response = (
+                                result[0]["generated_text"]
+                                .replace(formatted_prompt, "")
+                                .strip()
+                            )
                     else:
-                        st.json(openai_response.model_dump())
+                        # Use OpenAI
+                        openai_messages = []
+                        for msg in messages:
+                            # Convert format if needed
+                            openai_messages.append(
+                                {"role": msg["role"], "content": msg["content"]}
+                            )
 
-                st.markdown(assistant_response)
-
-                # Add assistant response to chat history
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": assistant_response}
-                )
-
-                # Record the interaction in LangSmith if enabled
-                if langsmith_enabled and langsmith_client:
-                    metadata = {
-                        "temperature": temperature,
-                        "max_tokens": max_tokens,
-                        "provider": model_provider,
-                        **search_metadata,
-                    }
-                    run_id = trace_ollama_chat(
-                        query=prompt,
-                        model_name=selected_model,
-                        messages=messages,
-                        response=assistant_response,
-                        metadata=metadata,
-                    )
-                    if debug_mode and run_id:
-                        st.info(f"Traced in LangSmith with run ID: {run_id}")
-                        st.markdown(
-                            f"[View trace](https://smith.langchain.com/projects/{os.environ.get('LANGCHAIN_PROJECT', 'default')})"
+                        openai_response = openai.chat.completions.create(
+                            model=selected_model,
+                            messages=openai_messages,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
                         )
+                        assistant_response = openai_response.choices[0].message.content
 
-            except Exception as e:
-                error_message = f"Error generating response: {str(e)}"
-                st.error(error_message)
-                # Add error message to chat history
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": f"⚠️ {error_message}"}
-                )
+                    # If debug mode is enabled, show the raw response
+                    if debug_mode:
+                        st.markdown("### Debug: Raw Response")
+                        if model_provider == "Hugging Face":
+                            st.json(
+                                {
+                                    "model": selected_model,
+                                    "generated_text": assistant_response,
+                                }
+                            )
+                        else:
+                            st.json(openai_response.model_dump())
+
+                    st.markdown(assistant_response)
+
+                    # Add assistant response to chat history
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": assistant_response}
+                    )
+
+                    # Record the interaction in LangSmith if enabled
+                    if langsmith_enabled and langsmith_client:
+                        metadata = {
+                            "temperature": temperature,
+                            "max_tokens": max_tokens,
+                            "provider": model_provider,
+                            **search_metadata,
+                        }
+                        try:
+                            from langsmith import Client
+
+                            langsmith_client = Client()
+                            run = langsmith_client.run_create(
+                                name=f"{model_provider} Chat",
+                                run_type="chain",
+                                inputs={"query": prompt},
+                                outputs={"response": assistant_response},
+                                runtime={
+                                    "model_name": selected_model,
+                                    "temperature": temperature,
+                                    "max_tokens": max_tokens,
+                                },
+                            )
+                            run_id = run.id
+
+                            if debug_mode and run_id:
+                                st.info(f"Traced in LangSmith with run ID: {run_id}")
+                                st.markdown(
+                                    f"[View trace](https://smith.langchain.com/projects/{os.environ.get('LANGCHAIN_PROJECT', 'default')})"
+                                )
+                        except Exception as e:
+                            st.warning(f"Error recording in LangSmith: {str(e)}")
+
+                except Exception as e:
+                    error_message = f"Error generating response: {str(e)}"
+                    st.error(error_message)
+                    # Add error message to chat history
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": f"⚠️ {error_message}"}
+                    )
 
 # Clear chat button
 if st.button("Clear Chat"):
