@@ -2,7 +2,7 @@
 import os
 import uuid
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Generator
 
 # Load environment variables
 load_dotenv()
@@ -23,23 +23,24 @@ def get_langsmith_client():
         print("LangSmith tracing is disabled")
         return None
 
-    # First try to get from settings
-    try:
-        from src.config import settings
+    # Try multiple keys for backwards compatibility
+    api_key = None
 
-        api_key = settings.langchain_api_key
-    except (ImportError, AttributeError):
-        # Fall back to environment variable
-        api_key = os.environ.get("LANGCHAIN_API_KEY")
+    # Try to get from environment variables with different names for backward compatibility
+    api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get("LANGSMITH_API_KEY")
 
     if not api_key:
-        print("Warning: LANGCHAIN_API_KEY environment variable not set")
+        print(
+            "Warning: No LangSmith API key found in environment variables (checked LANGCHAIN_API_KEY and LANGSMITH_API_KEY)"
+        )
         return None
 
     try:
         from langsmith import Client
 
-        client = Client()
+        # Explicitly pass the API key to avoid any loading issues
+        client = Client(api_key=api_key)
+        print(f"LangSmith client initialized with API key (length: {len(api_key)})")
         return client
     except ImportError:
         print("Warning: langsmith package not installed. Run 'pip install langsmith'")
@@ -110,6 +111,87 @@ def trace_ollama_chat(
     except Exception as e:
         print(f"Error tracing Ollama chat: {e}")
         return None
+
+
+def trace_huggingface_chat(
+    client,
+    prompt: str,
+    model: str = "unknown",
+    temperature: float = 0.7,
+    max_tokens: int = 1000,
+    **kwargs,
+) -> Generator:
+    """
+    Trace a Hugging Face chat interaction in LangSmith
+
+    Args:
+        client: The Hugging Face model or pipeline
+        prompt: The input prompt for the model
+        model: The model name
+        temperature: The temperature setting for generation
+        max_tokens: The maximum tokens to generate
+
+    Returns:
+        Generator for the streamed response
+    """
+    try:
+        # Ensure we have langsmith keys
+        if not (os.getenv("LANGCHAIN_API_KEY") or os.getenv("LANGSMITH_API_KEY")):
+            # Just use the model directly without tracing if not available
+            result = client(
+                prompt, max_new_tokens=max_tokens, temperature=temperature, **kwargs
+            )
+            yield {"generated_text": result[0]["generated_text"]}
+            return
+
+        # Import langsmith
+        from langsmith import Client
+
+        # Get client
+        langsmith_client = Client()
+
+        # Run via LangSmith
+        name = kwargs.pop("name", f"Hugging Face Chat {model}")
+
+        with langsmith_client.tracing(
+            name=name,
+            run_type="llm",
+            project_name=os.environ.get("LANGCHAIN_PROJECT", "ishtar-ai"),
+            metadata={
+                "model": model,
+                "source": "huggingface",
+                "application": "ishtar-ai",
+            },
+        ) as tracer:
+            # Record the input
+            tracer.add_input(prompt)
+
+            # Generate the response
+            response = client(
+                prompt, max_new_tokens=max_tokens, temperature=temperature, **kwargs
+            )
+
+            # Extract text
+            generated_text = response[0]["generated_text"]
+
+            # Add the output
+            tracer.add_output(generated_text)
+
+            # Return as a single output
+            yield {"generated_text": generated_text}
+
+    except Exception as e:
+        print(f"Error tracing Hugging Face chat: {e}")
+
+        # Fall back to direct generation
+        try:
+            result = client(
+                prompt, max_new_tokens=max_tokens, temperature=temperature, **kwargs
+            )
+            yield {"generated_text": result[0]["generated_text"]}
+        except Exception as inner_e:
+            print(f"Error in fallback generation: {inner_e}")
+            yield {"generated_text": f"Error generating response: {str(inner_e)}"}
 
 
 if __name__ == "__main__":

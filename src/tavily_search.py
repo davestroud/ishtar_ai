@@ -228,8 +228,14 @@ class TavilySearch:
                     "temperature",
                     "forecast",
                     "current",
-                    "now",
                     "today",
+                    "now",
+                    "rain",
+                    "sunny",
+                    "cloudy",
+                    "snow",
+                    "hot",
+                    "cold",
                 ]
             )
 

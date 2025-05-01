@@ -1,63 +1,50 @@
-# Ishtar AI Assistant
+# Ishtar AI
 
-A locally-running AI assistant powered by Hugging Face models with web search capabilities.
+An AI assistant that runs locally using Hugging Face models.
 
 ## Features
 
-- 🤖 Chat with various Hugging Face models locally
-- 🔍 Web search integration using Tavily Search API
-- 📊 Tracing and debugging with LangSmith
-- 🎛️ Configurable settings for model parameters
-- 💻 Simple, clean interface built with Streamlit
+- Chat with various LLM models from Hugging Face (Llama 3, Llama 4, Mistral, etc.)
+- Web search capability using Tavily (optional)
+- Debugging and tracing with LangSmith (optional)
 
-## Requirements
+## Setup
 
-- Python 3.9+
-- Hugging Face Transformers
-- Tavily API key (optional, for web search)
-- LangSmith API key (optional, for tracing and debugging)
+1. Ensure you have Python 3.10+ installed
+2. Install requirements: `pip install -r requirements.txt`
+3. Set up your environment variables in `.env` file:
+   ```
+   HUGGINGFACE_API_KEY=your_api_key
+   ```
 
-## Installation
+## Running the Application
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/ishtar_ai.git
-cd ishtar_ai
-```
+Simply execute:
 
-2. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install required packages:
-```bash
-pip install -r requirements.txt
-```
-
-4. Create a `.env` file with your API keys:
-```
-TAVILY_API_KEY=your_tavily_api_key
-LANGCHAIN_API_KEY=your_langchain_api_key
-LANGCHAIN_PROJECT=ishtar_ai
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-```
-
-## Usage
-
-1. Run the application:
 ```bash
 ./run_app.sh
 ```
-Or directly with Streamlit:
+
+Or run directly with Python:
+
 ```bash
-streamlit run ishtar_app/app.py
+python -m ishtar_app.app
 ```
 
-2. Open your browser at `http://localhost:8501`
+## Accessing Models
 
-3. Select a model from the sidebar and start chatting!
+To use Meta Llama models and other gated models, you need a Hugging Face API key:
+
+1. Create an account at [Hugging Face](https://huggingface.co/)
+2. Generate an API token at https://huggingface.co/settings/tokens
+3. Add the token to your `.env` file as `HUGGINGFACE_API_KEY`
+
+## Additional API Keys (Optional)
+
+For enhanced functionality, you can add these API keys:
+
+- `TAVILY_API_KEY`: For web search capabilities
+- `LANGCHAIN_API_KEY`: For tracing and debugging with LangSmith
 
 ## Application Structure
 

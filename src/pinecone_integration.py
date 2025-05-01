@@ -39,27 +39,38 @@ class PineconeClient:
             return None
 
         try:
-            # Import here to avoid requiring pinecone-client if not used
-            from pinecone import Pinecone, ServerlessSpec
+            # Import here to avoid requiring pinecone package if not used
+            try:
+                # Try importing the new package name
+                import pinecone
+                from pinecone import Pinecone, ServerlessSpec
 
-            # Initialize Pinecone
-            pc = Pinecone(api_key=self.api_key)
+                logger.info("Using new 'pinecone' package")
 
-            # List indexes to verify connection
-            indexes = pc.list_indexes()
+                # Initialize Pinecone
+                pc = Pinecone(api_key=self.api_key)
 
-            # Connect to existing index
-            self.index = pc.Index(host=self.host)
-            logger.info(
-                f"Connected to Pinecone index: {self.index_name} at {self.host}"
-            )
+                # List indexes to verify connection
+                indexes = pc.list_indexes()
 
-        except ImportError:
-            logger.warning(
-                "pinecone-client package not installed. Run 'pip install pinecone-client' to enable vector search."
-            )
+                # Connect to existing index
+                self.index = pc.Index(host=self.host)
+                logger.info(
+                    f"Connected to Pinecone index: {self.index_name} at {self.host}"
+                )
+            except ImportError:
+                # Fall back to old package name for backward compatibility
+                logger.warning(
+                    "The 'pinecone' package is not installed. Please install it with 'pip install pinecone-client'."
+                )
+                logger.warning(
+                    "Note: The package has been renamed from 'pinecone-client' to 'pinecone'. Consider updating."
+                )
+                return None
+
         except Exception as e:
             logger.error(f"Error initializing Pinecone client: {e}")
+            return None
 
     def query(
         self, vector: List[float], top_k: int = 5, include_metadata: bool = True

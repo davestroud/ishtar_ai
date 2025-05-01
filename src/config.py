@@ -73,6 +73,7 @@ else:
 class IshtarSettings(BaseSettings):
     # Hugging Face configuration
     huggingface_token: Optional[str] = Field(default=None, env="HUGGING_FACE_TOKEN")
+    huggingface_api_key: Optional[str] = Field(default=None, env="HUGGINGFACE_API_KEY")
 
     # Default model to use
     default_model: str = Field(default="google/gemma-2b", env="DEFAULT_MODEL")
@@ -137,15 +138,21 @@ class IshtarSettings(BaseSettings):
             print("LangSmith tracing will be disabled", file=sys.stderr)
             values["langsmith_tracing"] = False
 
-        # Check Hugging Face token
-        if values.get("huggingface_token"):
+        # Check Hugging Face token/API key (try API_KEY first, then TOKEN for backward compatibility)
+        if values.get("huggingface_api_key"):
+            print(
+                f"Hugging Face API key found (length: {len(values['huggingface_api_key'])})",
+                file=sys.stderr,
+            )
+        elif values.get("huggingface_token"):
             print(
                 f"Hugging Face token found (length: {len(values['huggingface_token'])})",
                 file=sys.stderr,
             )
         else:
             print(
-                "No Hugging Face token found in environment variables", file=sys.stderr
+                "No Hugging Face API key or token found in environment variables",
+                file=sys.stderr,
             )
             print("Some models may not be accessible", file=sys.stderr)
 
