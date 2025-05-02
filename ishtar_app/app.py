@@ -1,83 +1,35 @@
 #!/usr/bin/env python3
-import streamlit as st
-import logging
-import sys
-import os
-from dotenv import load_dotenv
-import traceback
+"""
+Ishtar AI Application
+Main application file for running the Streamlit interface
+"""
 
-# Add parent directory to path to import from src
+import os
+import sys
+import logging
+
+# Add parent directory to path to allow importing modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Fix "no running event loop" error
-import asyncio
+# Standard imports
+import streamlit as st
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union
+from pydantic import BaseModel
 
-try:
-    asyncio.get_running_loop()
-except RuntimeError:
-    # No running event loop, create a new one
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
-# Patch for the torch.__path__._path error in Streamlit
-# This occurs because Streamlit tries to extract paths from torch modules
-# which have custom attribute handling
-import types
-import torch
-
-
-# Create a helper function to safely get paths without error
-def safe_extract_paths(module):
-    if module.__name__.startswith("torch"):
-        # For torch modules, return empty list to avoid the error
-        return []
-
-    # For regular modules with __path__ attribute
-    if hasattr(module, "__path__"):
-        # Handle torch._classes which causes the error
-        if isinstance(module.__path__, types.ModuleType) or not hasattr(
-            module.__path__, "_path"
-        ):
-            return []
-        return list(module.__path__._path) if hasattr(module.__path__, "_path") else []
-    return []
-
-
-# Apply patch to Streamlit's local_sources_watcher if possible
-try:
-    import streamlit.watcher.local_sources_watcher as lsw
-
-    # Store the original function
-    original_extract_paths = lsw.extract_paths
-
-    # Define our patched function
-    def patched_extract_paths(module):
-        try:
-            return original_extract_paths(module)
-        except (AttributeError, RuntimeError):
-            return safe_extract_paths(module)
-
-    # Apply the patch
-    lsw.extract_paths = patched_extract_paths
-except (ImportError, AttributeError):
-    pass
-
-# Import components using absolute imports
+# Import components and settings
+from ishtar_app.monkeypatch import apply_monkeypatches
 from ishtar_app.components.sidebar import render_sidebar
-from ishtar_app.components.chat import render_chat_ui
+from ishtar_app.components.chat import render_chat_area
 from ishtar_app.components.header import render_header
 
-# Import API integrations
-from src.config import IshtarSettings, settings
-from src.langsmith_integration import get_langsmith_client
-from src.tavily_search import TavilySearch
-
-# Import optional modules if available
-try:
-    from src.weather_api import WeatherAPI
-    from src.pinecone_integration import PineconeClient
-except ImportError:
-    WeatherAPI = None
-    PineconeClient = None
+# Import retrieval modules
+from retrieval.config import IshtarSettings, settings
+from retrieval.langsmith_integration import get_langsmith_client
+from retrieval.tavily_search import TavilySearch
+from retrieval.newsapi_integration import NewsAPIClient
+from retrieval.weather_api import WeatherAPI
+from retrieval.pinecone_integration import PineconeClient
 
 # Import Hugging Face transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -144,39 +96,45 @@ def initialize_clients():
         except Exception as e:
             logger.error(f"Error initializing Pinecone client: {str(e)}")
 
-    # Initialize LangSmith client if API keys are available
+    # Initialize LangSmith client
     try:
-        # Check for LangSmith API key directly
-        langchain_api_key = os.getenv("LANGCHAIN_API_KEY")
-        langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
+        # First ensure required environment variables are set
+        langchain_api_key = os.getenv("LANGCHAIN_API_KEY") or os.getenv(
+            "LANGSMITH_API_KEY"
+        )
 
-        if langchain_api_key or langsmith_api_key:
-            try:
-                from langsmith import Client
+        if langchain_api_key:
+            # Default to enabled tracing if API key is present
+            os.environ["LANGSMITH_TRACING"] = os.environ.get(
+                "LANGSMITH_TRACING", "true"
+            )
 
-                # Use whichever key is available
-                api_key = langchain_api_key or langsmith_api_key
-                langsmith_client = Client(api_key=api_key)
+            # Ensure project name is set
+            if not os.getenv("LANGCHAIN_PROJECT"):
+                os.environ["LANGCHAIN_PROJECT"] = "ishtar_ai"
 
-                clients["langsmith"] = langsmith_client
-                logger.info(
-                    f"LangSmith client initialized with API key (length: {len(api_key)})"
-                )
+            # Log the environment setup
+            logger.info(f"LangSmith environment setup:")
+            logger.info(f"- API Key: {langchain_api_key[:5]}...")
+            logger.info(f"- Project: {os.environ.get('LANGCHAIN_PROJECT')}")
+            logger.info(f"- Tracing Enabled: {os.environ.get('LANGSMITH_TRACING')}")
 
-                # Also set tracing to enabled
-                os.environ["LANGSMITH_TRACING"] = "true"
-            except ImportError:
-                logger.error(
-                    "LangSmith package not installed. Try running 'pip install langsmith'"
-                )
-            except Exception as e:
-                logger.error(f"Error creating LangSmith client directly: {str(e)}")
-        else:
-            # Fall back to the integration module
+            # Initialize client
             langsmith_client = get_langsmith_client()
+
             if langsmith_client:
                 clients["langsmith"] = langsmith_client
-                logger.info("LangSmith client initialized via integration module")
+                logger.info("LangSmith client initialized successfully")
+
+                # Success message with project link
+                project_name = os.environ.get("LANGCHAIN_PROJECT", "ishtar_ai")
+                logger.info(
+                    f"LangSmith dashboard: https://smith.langchain.com/projects/{project_name}"
+                )
+            else:
+                logger.warning("LangSmith client could not be initialized")
+        else:
+            logger.info("No LangSmith API key found. Tracing will be disabled.")
     except Exception as e:
         logger.error(f"Error initializing LangSmith client: {str(e)}")
 
@@ -204,7 +162,7 @@ def main():
         settings = render_sidebar(clients)
 
         # Display chat UI with the settings
-        render_chat_ui(clients, settings)
+        render_chat_area(clients, settings)
 
     except Exception as e:
         st.error(f"Application error: {str(e)}")

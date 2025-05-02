@@ -50,7 +50,7 @@ For enhanced functionality, you can add these API keys:
 
 ```
 ishtar_ai/
-├── src/                 # Core functionality
+├── retrieval/            # Core retrieval functionality
 │   ├── config.py            # Configuration handling
 │   ├── langsmith_integration.py # LangSmith integration
 │   ├── newsapi_integration.py   # News API integration

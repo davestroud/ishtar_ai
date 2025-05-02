@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-import requests
-import json
 import os
 import sys
-from typing import List, Dict, Any, Optional, Union
+import json
+import time
+import logging
+from typing import Dict, Any, Optional, List, Union
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, HttpUrl, AnyHttpUrl, validator
 
 # Import settings
-from src.config import settings
+from retrieval.config import settings
 
 
 # Define Pydantic models for Tavily API

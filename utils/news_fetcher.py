@@ -17,7 +17,9 @@ from typing import List, Dict, Any, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import our modules
-from src.newsapi_integration import NewsAPIClient, chunk_articles
+from retrieval.newsapi_integration import NewsAPIClient
+from utils.text_processing import get_langchain_splitter
+from utils.embeddings import get_openai_embeddings
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, HttpUrl, validator, root_validator
 from langchain_community.vectorstores import Pinecone

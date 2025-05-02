@@ -114,7 +114,7 @@ def render_sidebar(clients: Dict[str, Any]) -> Dict[str, Any]:
                 if submit_button and new_token:
                     if save_huggingface_token(new_token):
                         st.success("Token saved successfully! Restarting app...")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Failed to save token")
 
@@ -142,7 +142,7 @@ def render_sidebar(clients: Dict[str, Any]) -> Dict[str, Any]:
                     if submit_button and new_token:
                         if save_huggingface_token(new_token):
                             st.success("Token saved successfully! Restarting app...")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("Failed to save token")
 
@@ -278,10 +278,23 @@ def render_sidebar(clients: Dict[str, Any]) -> Dict[str, Any]:
             if "langsmith" in clients:
                 enable_tracing = st.checkbox(
                     "Enable LangSmith Tracing",
-                    value=False,
+                    value=True,
                     help="Record interactions in LangSmith for debugging",
                 )
                 settings["enable_tracing"] = enable_tracing
+
+                # Force enable environment variable if checkbox is checked
+                if enable_tracing:
+                    os.environ["LANGSMITH_TRACING"] = "true"
+
+                    # Show LangSmith URL with the current project
+                    project_name = os.environ.get("LANGCHAIN_PROJECT", "ishtar_ai")
+                    st.success(f"Tracing to project: {project_name}")
+                    st.markdown(
+                        f"View traces at: [LangSmith Dashboard](https://smith.langchain.com/projects/{project_name})"
+                    )
+                else:
+                    os.environ["LANGSMITH_TRACING"] = "false"
             else:
                 settings["enable_tracing"] = False
                 if debug_mode:
@@ -304,6 +317,16 @@ def render_sidebar(clients: Dict[str, Any]) -> Dict[str, Any]:
             Built with Streamlit and Python.
             """
             )
+
+        # Toggle API connections
+        if st.button("Toggle API Connections"):
+            st.session_state.api_connections = not st.session_state.api_connections
+            st.rerun()
+
+        # Toggle debug mode
+        if st.button("Toggle Debug Mode"):
+            st.session_state.debug_mode = not st.session_state.debug_mode
+            st.rerun()
 
     return settings
 

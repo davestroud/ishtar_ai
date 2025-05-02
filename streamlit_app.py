@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
 import streamlit as st
-import json
 import os
-from src.tavily_search import TavilySearch
-from src.langsmith_integration import get_langsmith_client
-from src.pinecone_integration import get_pinecone_client
+import logging
+from retrieval.tavily_search import TavilySearch
+from retrieval.langsmith_integration import get_langsmith_client
+from retrieval.pinecone_integration import get_pinecone_client
+from dotenv import load_dotenv
+import json
+import inspect
+import importlib
+import sys
+import traceback
+from pathlib import Path
+import time
+import torch
+import transformers
+import accelerate
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    pipeline,
+    BitsAndBytesConfig,
+)
+from retrieval.weather_api import WeatherAPI
 import openai
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 import huggingface_hub
 
 # Page configuration
@@ -23,11 +40,8 @@ if hf_token:
 # Import langchain_community for embeddings to avoid deprecation warnings
 try:
     from langchain_community.embeddings import OpenAIEmbeddings
-    from src.weather_api import WeatherAPI
 except ImportError:
     from langchain.embeddings import OpenAIEmbeddings
-
-    WeatherAPI = None
 
 
 def is_langsmith_key_set():
@@ -678,4 +692,4 @@ if prompt := st.chat_input("Ask a question or request an analysis..."):
 # Clear chat button
 if st.button("Clear Chat"):
     st.session_state.messages = []
-    st.experimental_rerun()
+    st.rerun()

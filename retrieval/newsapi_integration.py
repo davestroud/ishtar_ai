@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Import settings
-from src.config import settings
+from retrieval.config import settings
+
+# Import shared utilities
+from utils.text_processing import get_langchain_splitter
+from utils.embeddings import get_openai_embeddings
 
 
 # Define Pydantic models for NewsAPI data
@@ -149,16 +153,10 @@ def chunk_articles(
         Tuple of (document chunks, metadata)
     """
     try:
-        # Use updated import path
-        try:
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
-        except ImportError:
-            # Fallback to old import path
-            from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap
-        )
+        # Get the text splitter
+        splitter = get_langchain_splitter(chunk_size, chunk_overlap)
+        if not splitter:
+            return [], []
 
         docs, metas = [], []
         for art in articles:
@@ -192,11 +190,6 @@ def chunk_articles(
         logger.info(f"Created {len(docs)} chunks from {len(articles)} articles")
         return docs, metas
 
-    except ImportError:
-        logger.error(
-            "langchain package not installed. Run 'pip install langchain' to enable text splitting."
-        )
-        return [], []
     except Exception as e:
         logger.error(f"Error chunking articles: {e}")
         return [], []
@@ -226,11 +219,6 @@ def embed_chunks(
             logger.error("OpenAI API key not set. Set OPENAI_API_KEY in .env file.")
             return []
 
-        import openai
-
-        # Set API key
-        openai.api_key = api_key
-
         # Select the appropriate model based on dimensions
         # Note: text-embedding-3-small actually produces 1536 dimensions
         if dimensions == 1024 or dimensions == 1536:
@@ -251,31 +239,18 @@ def embed_chunks(
             f"Using embedding model {model} with {actual_dimensions} dimensions"
         )
 
-        # Process in batches to avoid rate limits
-        batch_size = 20
-        all_embeddings = []
-
-        for i in tqdm(range(0, len(docs), batch_size), desc="Embedding chunks"):
-            batch = docs[i : i + batch_size]
-            try:
-                response = openai.embeddings.create(input=batch, model=model)
-                batch_embeddings = [item.embedding for item in response.data]
-                all_embeddings.extend(batch_embeddings)
-            except Exception as e:
-                logger.error(f"Error embedding batch {i//batch_size + 1}: {e}")
-                # Add empty embeddings to maintain index alignment
-                all_embeddings.extend([[0.0] * actual_dimensions] * len(batch))
-
-        logger.info(
-            f"Created {len(all_embeddings)} embeddings with {actual_dimensions} dimensions"
+        # Use the shared embedding function
+        embeddings = get_openai_embeddings(
+            texts=docs, api_key=api_key, model=model, show_progress=True
         )
-        return all_embeddings
 
-    except ImportError:
-        logger.error(
-            "openai package not installed. Run 'pip install openai' to enable embeddings."
-        )
-        return []
+        if embeddings:
+            logger.info(
+                f"Created {len(embeddings)} embeddings with {len(embeddings[0])} dimensions"
+            )
+
+        return embeddings
+
     except Exception as e:
         logger.error(f"Error embedding chunks: {e}")
         return []
@@ -301,7 +276,7 @@ def index_to_pinecone(
     """
     # Import the client if not provided
     if not pinecone_client:
-        from src.pinecone_integration import get_pinecone_client
+        from retrieval.pinecone_integration import get_pinecone_client
 
         pinecone_client = get_pinecone_client()
 
@@ -387,7 +362,7 @@ def fetch_and_index_news(
 
     # Index to Pinecone
     logger.info("Indexing to Pinecone")
-    from src.pinecone_integration import get_pinecone_client
+    from retrieval.pinecone_integration import get_pinecone_client
 
     pinecone_client = get_pinecone_client()
 
@@ -418,7 +393,7 @@ if __name__ == "__main__":
                     logger.info(f"Successfully created {len(embeddings)} embeddings")
 
                     # Test indexing - only if Pinecone is configured
-                    from src.pinecone_integration import get_pinecone_client
+                    from retrieval.pinecone_integration import get_pinecone_client
 
                     pinecone_client = get_pinecone_client()
 

@@ -19,6 +19,10 @@ from accelerate import (
     load_checkpoint_and_dispatch,
 )
 import torch
+import uuid
+
+# Import for LangSmith tracing
+from retrieval.langsmith_integration import trace_huggingface_chat
 
 
 def init_chat_state():
@@ -464,7 +468,7 @@ def render_chat_ui(clients: Dict[str, Any], settings: Dict[str, Any]) -> None:
                         # Store in clients
                         clients["hf_model"] = text_generation
                         st.success(f"Model {model_name} loaded successfully!")
-                        st.experimental_rerun()
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Failed to load model: {str(e)}")
                         logging.error(f"Failed to load model: {str(e)}")
@@ -479,12 +483,12 @@ def render_chat_ui(clients: Dict[str, Any], settings: Dict[str, Any]) -> None:
             if st.button("📰 Summarize the latest news"):
                 prompt = "Summarize the latest world news headlines"
                 st.session_state.messages.append({"role": "user", "content": prompt})
-                st.experimental_rerun()
+                st.rerun()
         with col2:
             if st.button("💡 Generate a creative idea"):
                 prompt = "Give me a creative project idea using AI and Python"
                 st.session_state.messages.append({"role": "user", "content": prompt})
-                st.experimental_rerun()
+                st.rerun()
 
     # Display chat history
     for message in st.session_state.messages:
@@ -636,14 +640,21 @@ def render_chat_ui(clients: Dict[str, Any], settings: Dict[str, Any]) -> None:
                     # Check if tracing is enabled
                     if settings.get("enable_tracing") and "langsmith" in clients:
                         try:
-                            from src.langsmith_integration import trace_huggingface_chat
-
                             # Stream response with tracing
                             for chunk in trace_huggingface_chat(
                                 client=clients["hf_model"],
                                 prompt=augmented_prompt,
                                 model=settings["model"],
                                 temperature=settings.get("temperature", 0.7),
+                                max_tokens=settings.get("max_tokens", 1000),
+                                metadata={
+                                    "session_id": id(st.session_state),
+                                    "user_query": prompt,
+                                    "augmented_prompt": augmented_prompt != prompt,
+                                    "web_search": settings.get(
+                                        "web_search_enabled", False
+                                    ),
+                                },
                             ):
                                 if chunk:
                                     content = chunk.get("generated_text", "")
@@ -655,13 +666,69 @@ def render_chat_ui(clients: Dict[str, Any], settings: Dict[str, Any]) -> None:
                             st.error(
                                 "LangSmith tracing failed. Continuing without tracing."
                             )
-                            # Fall back to regular streaming
-                            full_response = stream_response(
-                                clients["hf_model"],
-                                augmented_prompt,
-                                settings,
-                                message_placeholder,
-                            )
+
+                            # Try direct LangSmith API instead
+                            try:
+                                from langsmith import Client
+
+                                # Generate without tracing first to get response
+                                formatted_prompt = format_prompt_for_model(
+                                    augmented_prompt, settings["model"]
+                                )
+                                result = clients["hf_model"](formatted_prompt)
+                                response_text = result[0]["generated_text"]
+                                response_text = response_text.replace(
+                                    formatted_prompt, ""
+                                ).strip()
+
+                                # Set response in the UI
+                                full_response = response_text
+                                message_placeholder.markdown(full_response)
+
+                                # Then trace separately using direct API call
+                                if "langsmith" in clients and isinstance(
+                                    clients["langsmith"], Client
+                                ):
+                                    project_name = os.getenv(
+                                        "LANGCHAIN_PROJECT", "ishtar_ai"
+                                    )
+                                    langsmith_client = clients["langsmith"]
+
+                                    # Record the run after the fact
+                                    run_id = str(uuid.uuid4())
+                                    langsmith_client.create_run(
+                                        project_name=project_name,
+                                        name=f"Direct Hugging Face Chat {settings['model']}",
+                                        run_type="llm",
+                                        inputs={"prompt": augmented_prompt},
+                                        outputs={"response": response_text},
+                                        extra={
+                                            "model": settings["model"],
+                                            "temperature": settings.get(
+                                                "temperature", 0.7
+                                            ),
+                                            "session_id": id(st.session_state),
+                                            "user_query": prompt,
+                                            "web_search": settings.get(
+                                                "web_search_enabled", False
+                                            ),
+                                        },
+                                        run_id=run_id,
+                                    )
+                                    logging.info(
+                                        f"Recorded run in LangSmith with ID: {run_id}"
+                                    )
+                            except Exception as direct_error:
+                                logging.error(
+                                    f"Error with direct LangSmith API: {str(direct_error)}"
+                                )
+                                # Fall back to regular streaming
+                                full_response = stream_response(
+                                    clients["hf_model"],
+                                    augmented_prompt,
+                                    settings,
+                                    message_placeholder,
+                                )
                     else:
                         # Stream response without tracing
                         full_response = stream_response(
@@ -731,23 +798,33 @@ def stream_response(client, prompt, settings, placeholder) -> str:
 
             # Extract response and remove the prompt
             response_text = result[0]["generated_text"]
-            response_text = response_text.replace(formatted_prompt, "").strip()
+
+            # Properly remove the formatted prompt from the response
+            if formatted_prompt in response_text:
+                response_text = response_text.replace(formatted_prompt, "", 1).strip()
 
             # Simulate streaming for UI purposes
             words = response_text.split()
+
+            # Handle empty response
+            if not words:
+                return "I don't have a specific response to that query."
+
             chunks = [" ".join(words[i : i + 3]) for i in range(0, len(words), 3)]
 
+            full_response = ""
             for chunk in chunks:
                 full_response += chunk + " "
                 placeholder.markdown(full_response + "▌")
                 time.sleep(0.05)  # Small delay for smoother appearance
 
+            # Return the final response without trailing spaces
+            return full_response.strip()
+
         except TypeError as e:
             logging.error(f"Type error in response streaming: {str(e)}")
             placeholder.error("Error with model generation. Please try another model.")
             return "I encountered an error with this model. Please try selecting a different model from the sidebar."
-
-        return full_response.strip()
 
     except Exception as e:
         logging.error(f"Error streaming response: {str(e)}")

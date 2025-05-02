@@ -106,6 +106,12 @@ fi
 # Configure memory settings for model disk offloading
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
+# Configure Streamlit to disable auto-reloader to prevent torch path errors
+export STREAMLIT_SERVER_ENABLE_STATIC_SERVING=false
+export STREAMLIT_SERVER_WATCH_DIRS=false
+export STREAMLIT_SERVER_HEADLESS=true
+export STREAMLIT_SERVER_FILE_WATCHER_TYPE="none"
+
 # Run the Streamlit app
 echo "Starting Ishtar AI with Streamlit..."
 echo "App will be available at http://localhost:8501"

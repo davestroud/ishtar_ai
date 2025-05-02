@@ -16,49 +16,13 @@ from typing import List, Dict, Any, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import Pinecone integration
-from src.pinecone_integration import get_pinecone_client
+from retrieval.pinecone_integration import get_pinecone_client
+from utils.text_processing import chunk_text
+from utils.embeddings import get_openai_embeddings
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
-
-def get_openai_embeddings(
-    texts: List[str], model: str = "text-embedding-3-small"
-) -> List[List[float]]:
-    """Get embeddings from OpenAI's API"""
-    try:
-        import openai
-
-        # Check if API key is set
-        if not openai.api_key:
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            if not openai.api_key:
-                raise ValueError("OpenAI API key not found in environment variables")
-
-        # Create embeddings in batches (max 1000 per API call)
-        batch_size = 100  # Smaller batch size to avoid timeouts
-        embeddings = []
-
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-            print(
-                f"Processing batch {i//batch_size + 1}/{(len(texts) + batch_size - 1)//batch_size}"
-            )
-
-            response = openai.embeddings.create(input=batch_texts, model=model)
-
-            batch_embeddings = [item.embedding for item in response.data]
-            embeddings.extend(batch_embeddings)
-
-        return embeddings
-
-    except ImportError:
-        print("Error: openai package not installed. Install with 'pip install openai'")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error creating embeddings: {e}")
-        sys.exit(1)
 
 
 def read_file(file_path: Path) -> tuple:
@@ -122,39 +86,6 @@ def read_file(file_path: Path) -> tuple:
     except Exception as e:
         print(f"Error reading file {file_path}: {e}")
         return None, None
-
-
-def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
-    """Split text into chunks with overlap"""
-    if not text:
-        return []
-
-    # Split by paragraphs
-    paragraphs = text.split("\n")
-    chunks = []
-    current_chunk = ""
-
-    for para in paragraphs:
-        # If adding this paragraph would exceed chunk size, save current chunk and start a new one
-        if len(current_chunk) + len(para) > chunk_size and current_chunk:
-            chunks.append(current_chunk)
-            # Keep the overlap from the end of the previous chunk
-            overlap_text = (
-                " ".join(current_chunk.split()[-overlap:]) if overlap > 0 else ""
-            )
-            current_chunk = overlap_text + " " + para
-        else:
-            # Add to current chunk
-            if current_chunk:
-                current_chunk += "\n" + para
-            else:
-                current_chunk = para
-
-    # Add the last chunk if it's not empty
-    if current_chunk:
-        chunks.append(current_chunk)
-
-    return chunks
 
 
 def upload_to_pinecone(
