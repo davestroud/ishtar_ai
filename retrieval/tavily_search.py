@@ -4,6 +4,7 @@ import sys
 import json
 import time
 import logging
+import requests
 from typing import Dict, Any, Optional, List, Union
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, HttpUrl, AnyHttpUrl, validator

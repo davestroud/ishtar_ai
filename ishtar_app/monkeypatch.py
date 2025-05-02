@@ -15,6 +15,14 @@ import importlib
 logger = logging.getLogger(__name__)
 
 
+def apply_monkeypatches():
+    """Apply all monkeypatches for compatibility with Streamlit and other libraries"""
+    # Apply torch patches
+    apply_torch_patches()
+
+    logger.info("Applied all monkeypatches for Streamlit compatibility")
+
+
 def apply_torch_patches():
     """Apply all monkeypatches for torch compatibility with Streamlit"""
     # Fix for torch.__path__._path error
@@ -170,42 +178,99 @@ def _apply_generic_streamlit_fix():
     try:
         # Make torch.__path__ more robust
         import torch
+        import types
 
         # Create a simple list-like object that won't cause errors
         class SafePath(list):
             def __getattr__(self, name):
+                if name == "_path":
+                    return []
                 return []
 
-        # Add special path attributes
+        # Handle torch classes specifically
+        if hasattr(torch, "_classes"):
+            # Make a fake __path__ that doesn't error on _path access
+            class ClassesModule(types.ModuleType):
+                @property
+                def __path__(self):
+                    return SafePath()
+
+            # Replace torch._classes with our safe version
+            orig_classes = torch._classes
+            safe_classes = ClassesModule("torch._classes")
+            # Copy all attributes from the original
+            for attr in dir(orig_classes):
+                if not attr.startswith("__"):
+                    try:
+                        setattr(safe_classes, attr, getattr(orig_classes, attr))
+                    except (AttributeError, RuntimeError):
+                        pass
+
+            # Replace torch._classes with our safe version
+            torch._classes = safe_classes
+
+        # Also patch torch.__path__ for good measure
         torch.__path__ = SafePath()
 
-        # If _classes exists, add __path__ to it too
-        if hasattr(torch, "_classes"):
-            torch._classes.__path__ = SafePath()
+        # Add special handling for torch.classes if it exists
+        if hasattr(torch, "classes"):
+            if not hasattr(torch.classes, "__path__"):
+                torch.classes.__path__ = SafePath()
 
         logger.info("Applied generic Streamlit compatibility fix for torch")
     except ImportError:
         logger.warning("torch module not found, skipping generic fix")
     except Exception as e:
-        logger.error(f"Error applying generic Streamlit fix: {e}")
+        logger.error(f"Error applying generic Streamlit fix: {str(e)}")
 
 
 def fix_asyncio_loop():
     """Fix the asyncio loop error in Streamlit"""
     try:
         import asyncio
+        import nest_asyncio
+
+        # Try to apply nest_asyncio first, which handles nested event loops
+        try:
+            nest_asyncio.apply()
+            logger.info("Applied nest_asyncio patch for nested event loops")
+        except Exception as e:
+            logger.warning(f"nest_asyncio apply failed: {str(e)}")
 
         # Create a new event loop if there isn't one
         try:
             asyncio.get_running_loop()
+            logger.info("Using existing asyncio event loop")
         except RuntimeError:
+            # If there's no running loop, create and set one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            logger.info("Created new asyncio event loop")
-    except ImportError:
-        logger.warning("asyncio module not found")
+            logger.info("Created and set new asyncio event loop")
+
+        # Also patch asyncio.run to handle the case where it's called from Streamlit
+        original_run = asyncio.run
+
+        def patched_run(coro, **kwargs):
+            try:
+                return original_run(coro, **kwargs)
+            except RuntimeError as e:
+                if "no running event loop" in str(
+                    e
+                ) or "There is no current event loop" in str(e):
+                    # Create a new loop and run in it
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    return loop.run_until_complete(coro)
+                raise
+
+        # Apply the patch
+        asyncio.run = patched_run
+        logger.info("Patched asyncio.run function")
+
+    except ImportError as e:
+        logger.warning(f"Required module not found for asyncio patch: {str(e)}")
     except Exception as e:
-        logger.error(f"Error fixing asyncio loop: {e}")
+        logger.error(f"Error fixing asyncio loop: {str(e)}")
 
 
 def fix_torch_classes():

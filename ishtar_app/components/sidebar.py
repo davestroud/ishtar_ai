@@ -275,32 +275,46 @@ def render_sidebar(clients: Dict[str, Any]) -> Dict[str, Any]:
             settings["debug_mode"] = debug_mode
 
             # LangSmith tracing
-            if "langsmith" in clients:
+            if "langsmith" in clients and clients["langsmith"] is not None:
                 enable_tracing = st.checkbox(
                     "Enable LangSmith Tracing",
-                    value=True,
+                    value=os.environ.get("LANGSMITH_TRACING", "").lower() == "true",
                     help="Record interactions in LangSmith for debugging",
                 )
                 settings["enable_tracing"] = enable_tracing
 
-                # Force enable environment variable if checkbox is checked
+                # Update environment variables based on checkbox
                 if enable_tracing:
                     os.environ["LANGSMITH_TRACING"] = "true"
 
                     # Show LangSmith URL with the current project
                     project_name = os.environ.get("LANGCHAIN_PROJECT", "ishtar_ai")
-                    st.success(f"Tracing to project: {project_name}")
+                    st.success(f"LangSmith tracing enabled for project: {project_name}")
                     st.markdown(
                         f"View traces at: [LangSmith Dashboard](https://smith.langchain.com/projects/{project_name})"
                     )
                 else:
                     os.environ["LANGSMITH_TRACING"] = "false"
+                    st.info("LangSmith tracing is disabled")
             else:
                 settings["enable_tracing"] = False
-                if debug_mode:
+                # If LangSmith client is not available, show instructions on how to enable it
+                with st.expander("Enable LangSmith Tracing"):
                     st.info(
-                        "LangSmith integration not available. Add LANGCHAIN_API_KEY to your .env file to enable tracing."
+                        "LangSmith integration is not available. To enable tracing:"
                     )
+                    st.markdown(
+                        """
+                    1. Get a LangSmith API key from [smith.langchain.com](https://smith.langchain.com/)
+                    2. Add to your .env file:
+                    ```
+                    LANGCHAIN_API_KEY=your_api_key_here
+                    LANGCHAIN_PROJECT=ishtar_ai
+                    ```
+                    3. Restart the application
+                    """
+                    )
+                os.environ["LANGSMITH_TRACING"] = "false"
 
         # About section
         st.divider()

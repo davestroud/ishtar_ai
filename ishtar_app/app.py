@@ -11,16 +11,24 @@ import logging
 # Add parent directory to path to allow importing modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import and apply monkeypatches to fix PyTorch/Streamlit compatibility early
+from ishtar_app.monkeypatch import apply_monkeypatches, apply_torch_patches
+
+# Apply monkeypatches before any other imports to ensure PyTorch works with Streamlit
+apply_monkeypatches()
+apply_torch_patches()
+
 # Standard imports
 import streamlit as st
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import traceback
 
 # Import components and settings
-from ishtar_app.monkeypatch import apply_monkeypatches
 from ishtar_app.components.sidebar import render_sidebar
-from ishtar_app.components.chat import render_chat_area
+from ishtar_app.components.chat import render_chat_ui
 from ishtar_app.components.header import render_header
 
 # Import retrieval modules
@@ -104,20 +112,8 @@ def initialize_clients():
         )
 
         if langchain_api_key:
-            # Default to enabled tracing if API key is present
-            os.environ["LANGSMITH_TRACING"] = os.environ.get(
-                "LANGSMITH_TRACING", "true"
-            )
-
-            # Ensure project name is set
-            if not os.getenv("LANGCHAIN_PROJECT"):
-                os.environ["LANGCHAIN_PROJECT"] = "ishtar_ai"
-
-            # Log the environment setup
-            logger.info(f"LangSmith environment setup:")
-            logger.info(f"- API Key: {langchain_api_key[:5]}...")
-            logger.info(f"- Project: {os.environ.get('LANGCHAIN_PROJECT')}")
-            logger.info(f"- Tracing Enabled: {os.environ.get('LANGSMITH_TRACING')}")
+            # Import the function directly
+            from retrieval.langsmith_integration import get_langsmith_client
 
             # Initialize client
             langsmith_client = get_langsmith_client()
@@ -133,10 +129,13 @@ def initialize_clients():
                 )
             else:
                 logger.warning("LangSmith client could not be initialized")
+                os.environ["LANGSMITH_TRACING"] = "false"
         else:
             logger.info("No LangSmith API key found. Tracing will be disabled.")
+            os.environ["LANGSMITH_TRACING"] = "false"
     except Exception as e:
         logger.error(f"Error initializing LangSmith client: {str(e)}")
+        os.environ["LANGSMITH_TRACING"] = "false"
 
     return clients
 
@@ -162,7 +161,7 @@ def main():
         settings = render_sidebar(clients)
 
         # Display chat UI with the settings
-        render_chat_area(clients, settings)
+        render_chat_ui(clients, settings)
 
     except Exception as e:
         st.error(f"Application error: {str(e)}")
