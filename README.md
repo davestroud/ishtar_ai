@@ -41,36 +41,21 @@ docker build -t ishtar-ai .
 docker run -p 8000:8000 ishtar-ai
 ```
 
-# Ishtar AI – example environment variables
+# Environment variables (.env)
 
-# OpenAI
-OPENAI_API_KEY=
+```
+# Meta Llama Developer
+LLAMA_API_KEY=llama-xxxxxxxxxxxxxxxxxxxxxxxx
 
-# Pinecone
-PINECONE_API_KEY=
-PINECONE_ENV=
+# Pinecone (serverless SDK v3)
+PINECONE_API_KEY=pcd-xxxxxxxxxxxxxxxxxxxxxxxx
+PINECONE_HOST=quickstart-xxxxxx.svc.us-east-1.aws.pinecone.io
 PINECONE_INDEX=ishtar-ai
 
-# Hugging Face / Llama
-HUGGINGFACEHUB_API_TOKEN=<your Hugging Face access token>
-LLAMA_REPO=meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
+# Tavily (optional real-time web search)
+TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
 
-from huggingface_hub import InferenceClient
-from langchain_huggingface import ChatHuggingFace
-from langchain_core.messages import HumanMessage
-
-_hf_client = InferenceClient(
-    model=LLAMA_REPO,
-    token=HUGGINGFACEHUB_API_TOKEN,
-    provider="hf-inference",   # valid provider name
-)
-
-chat_llm = ChatHuggingFace(
-    llm=_hf_client,
-    temperature=0.1,
-    max_new_tokens=256,
-)
-
-async def query_pipeline(prompt: str) -> str:
-    chat_response = await chat_llm.ainvoke([HumanMessage(content=prompt)])
-    return chat_response.content.strip()
+# LangSmith tracing (optional)
+LANGCHAIN_API_KEY=lsm-xxxxxxxxxxxxxxxxxxxxxxxx
+LANGCHAIN_TRACING_V2=true
+```
