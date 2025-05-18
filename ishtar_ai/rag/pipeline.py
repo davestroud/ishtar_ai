@@ -88,6 +88,26 @@ from llama_api_client import LlamaAPIClient
 llama_client = LlamaAPIClient(api_key=_llama_api_key, base_url=_llama_base_url)
 
 
+# ---------------------------------------------------------------------------
+# Tavily web search (real-time layer) – optional
+# ---------------------------------------------------------------------------
+from typing import List
+
+try:
+    from tavily import TavilyClient  # type: ignore
+
+    _tavily_api_key = os.environ.get("TAVILY_API_KEY")
+    USE_TAVILY = bool(_tavily_api_key)
+
+    if USE_TAVILY:
+        tavily_client = TavilyClient(api_key=_tavily_api_key)
+
+except ModuleNotFoundError:
+    USE_TAVILY = False
+
+from langchain_core.documents import Document
+
+
 # async helper to call Meta API in thread (SDK is sync)
 async def _llama_chat(
     prompt: str, temperature: float = 0.1, max_tokens: int = 256
@@ -140,10 +160,52 @@ async def query_pipeline(query: str, *, top_k: int = 4) -> str:
     3. ask the LLM for a grounded answer
     """
 
-    if vectorstore is not None:
-        # 1. Retrieve docs from Pinecone
-        docs = vectorstore.similarity_search(query, k=top_k)
-        context = "\n\n".join(d.page_content for d in docs)
+    # ------------------------------------------------------------------
+    # 1. Retrieve documents from Pinecone and/or Tavily in parallel
+    # ------------------------------------------------------------------
+
+    async def _get_pine():
+        if vectorstore is None:
+            return []
+        return vectorstore.similarity_search(query, k=top_k)  # sync but fast
+
+    async def _get_tavily():
+        if not USE_TAVILY:
+            return []
+
+        def _sync():
+            # basic search depth, return dict with "results"
+            res = tavily_client.search(query, max_results=top_k, search_depth="basic")
+            docs: List[Document] = []
+            for item in res.get("results", []):
+                text = item.get("content") or item.get("title") or ""
+                docs.append(
+                    Document(
+                        page_content=text,
+                        metadata={
+                            "url": item.get("url"),
+                            "similarity": item.get("score", 0.0),
+                            "source": "tavily",
+                        },
+                    )
+                )
+            return docs
+
+        return await asyncio.to_thread(_sync)
+
+    pine_docs, web_docs = await asyncio.gather(_get_pine(), _get_tavily())
+
+    docs_all = pine_docs + web_docs
+
+    # simple sorting by similarity if present
+    docs_all_sorted = sorted(
+        docs_all,
+        key=lambda d: d.metadata.get("similarity", 0.0),
+        reverse=True,
+    )[:top_k]
+
+    if docs_all_sorted:
+        context = "\n\n".join(d.page_content for d in docs_all_sorted)
 
         prompt = (
             "You are a helpful assistant. Use the CONTEXT below to answer the QUESTION.\n"
@@ -151,7 +213,7 @@ async def query_pipeline(query: str, *, top_k: int = 4) -> str:
             f"CONTEXT:\n{context}\n\nQUESTION: {query}\nANSWER:"
         )
     else:
-        # No vector store; ask the model directly.
+        # no retrieved docs
         prompt = (
             "You are a helpful assistant. Answer the QUESTION as best you can.\n\n"
             f"QUESTION: {query}\nANSWER:"
