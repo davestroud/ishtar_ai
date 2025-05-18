@@ -21,6 +21,7 @@ vectorstore = Pinecone(
 
 llm = OpenAI(model="llama-4")
 
+
 qa_chain = RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
@@ -34,4 +35,5 @@ async def query_pipeline(query: str) -> str:
     # ``acall`` returns a dict with the key ``"result"`` holding the answer text
     if isinstance(result, dict) and "result" in result:
         return result["result"]
+
     return result
