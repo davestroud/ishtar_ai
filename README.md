@@ -26,6 +26,7 @@ External data sources such as ReliefWeb, ACLED, and UNHCR can be ingested to kee
    ```
 4. Run the API server:
    ```bash
+   pkill -f 'uvicorn.*ishtar_ai.app.main' || true
    uvicorn ishtar_ai.app.main:app --reload
    ```
 5. Launch the Gradio interface:
@@ -51,5 +52,25 @@ PINECONE_ENV=
 PINECONE_INDEX=ishtar-ai
 
 # Hugging Face / Llama
-LLAMA_API_KEY=
-HF_TOKEN=
+HUGGINGFACEHUB_API_TOKEN=<your Hugging Face access token>
+LLAMA_REPO=meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
+
+from huggingface_hub import InferenceClient
+from langchain_huggingface import ChatHuggingFace
+from langchain_core.messages import HumanMessage
+
+_hf_client = InferenceClient(
+    model=LLAMA_REPO,
+    token=HUGGINGFACEHUB_API_TOKEN,
+    provider="hf-inference",   # valid provider name
+)
+
+chat_llm = ChatHuggingFace(
+    llm=_hf_client,
+    temperature=0.1,
+    max_new_tokens=256,
+)
+
+async def query_pipeline(prompt: str) -> str:
+    chat_response = await chat_llm.ainvoke([HumanMessage(content=prompt)])
+    return chat_response.content.strip()

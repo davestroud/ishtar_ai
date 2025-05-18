@@ -1,39 +1,184 @@
-"""RAG pipeline using LangChain and Llama 4."""
-from langchain.chains import RetrievalQA
-from langchain.llms import OpenAI
-from langchain.vectorstores import Pinecone
-from langchain.embeddings import OpenAIEmbeddings
-from pinecone import Pinecone as PineconeClient
+"""Light-weight RAG pipeline (vector search + LLM).
+
+If there is a local `.env` file (as generated from `env.example`) we load it
+automatically so that variables like ``LLAMA_API_KEY`` and ``PINECONE_API_KEY``
+are available during development without explicitly `export`-ing them.
+"""
+
+# Load env vars first (no hard dependency in production)
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    # python-dotenv is an optional dev dependency; ignore if missing
+    pass
+
 import os
+import asyncio
 
-# Initialize Pinecone
-_pinecone_api_key = os.environ.get("PINECONE_API_KEY", "")
-_pinecone_env = os.environ.get("PINECONE_ENV", "")
-_pinecone_index = os.environ.get("PINECONE_INDEX", "ishtar-ai")
+# ---------------------------------------------------------------------------
+# Pinecone (vector store) – TEMPORARILY DISABLED
+# ---------------------------------------------------------------------------
+# To get the FastAPI app running without external service errors, we wrap
+# any Pinecone-related imports and initialisation behind a feature flag.  Set
+# ``USE_PINECONE = True`` later when your credentials and index are ready.
+# ---------------------------------------------------------------------------
 
-pinecone_client = PineconeClient(api_key=_pinecone_api_key, environment=_pinecone_env)
-vectorstore = Pinecone(
-    index_name=_pinecone_index,
-    embedding=OpenAIEmbeddings(),
-    pinecone_api_key=_pinecone_api_key,
-    environment=_pinecone_env,
-)
+# pylint: disable=invalid-name
+USE_PINECONE = False  # flip to ``True`` when you want Pinecone back
 
-llm = OpenAI(model="llama-4")
+if USE_PINECONE:
+    import pinecone
+    from langchain_openai.embeddings.base import OpenAIEmbeddings
+    from langchain_pinecone import PineconeVectorStore
+
+# ----------------------------------------------------------------------------
+# Pinecone configuration
+# ----------------------------------------------------------------------------
+# Required: PINECONE_API_KEY must be set in the environment.
+# Optional: PINECONE_INDEX (defaults to "ishtar-ai").
+# ----------------------------------------------------------------------------
+
+if USE_PINECONE:
+    _pinecone_api_key = os.environ.get("PINECONE_API_KEY")
+    if not _pinecone_api_key:
+        raise RuntimeError("PINECONE_API_KEY environment variable is not set.")
+
+    _pinecone_index = os.environ.get("PINECONE_INDEX", "ishtar-ai")
+
+    # Instantiate Pinecone client (SDK >=3.0)
+    pinecone_client = pinecone.Pinecone(api_key=_pinecone_api_key)
+
+    # Ensure index exists (create if missing)
+    if _pinecone_index not in pinecone_client.list_indexes().names():
+        from pinecone import ServerlessSpec
+
+        DEFAULT_DIMENSION = 1536
+        pinecone_client.create_index(
+            name=_pinecone_index,
+            dimension=DEFAULT_DIMENSION,
+            metric="cosine",
+            spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+        )
+
+    index = pinecone_client.Index(_pinecone_index)
+
+    vectorstore = PineconeVectorStore(index=index, embedding=OpenAIEmbeddings())
+else:
+    vectorstore = None  # type: ignore
+
+# ---------------------------------------------------------------------------
+# Meta Llama Developer client configuration
+# ---------------------------------------------------------------------------
+
+_llama_api_key = os.environ.get("LLAMA_API_KEY") or os.environ.get("LLM_API_KEY")
+if not _llama_api_key:
+    raise RuntimeError(
+        "Missing API key. Set either LLAMA_API_KEY (preferred) or LLM_API_KEY."
+    )
+
+_llama_base_url = os.environ.get("LLAMA_API_URL", "https://api.llama.com/v1/")
+
+_llama_model = os.environ.get("LLAMA_MODEL", "Llama-4-Maverick-17B-128E-Instruct-FP8")
+
+# Meta Llama Developer SDK
+from llama_api_client import LlamaAPIClient
+
+llama_client = LlamaAPIClient(api_key=_llama_api_key, base_url=_llama_base_url)
 
 
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever(),
-)
+# async helper to call Meta API in thread (SDK is sync)
+async def _llama_chat(
+    prompt: str, temperature: float = 0.1, max_tokens: int = 256
+) -> str:
+    def _sync_call():
+        response = llama_client.chat.completions.create(
+            model=_llama_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_completion_tokens=max_tokens,
+        )
+        return response
 
-async def query_pipeline(query: str) -> str:
-    """Run the RAG pipeline and return the answer text."""
-    # LangChain RetrievalQA provides an asynchronous ``acall`` method
-    result = await qa_chain.acall(query)
-    # ``acall`` returns a dict with the key ``"result"`` holding the answer text
-    if isinstance(result, dict) and "result" in result:
-        return result["result"]
+    resp = await asyncio.to_thread(_sync_call)
 
-    return result
+    # ---------------------------------------------------------------------
+    # llama_api_client returns a ``CreateChatCompletionResponse`` with a
+    # convenience field ``completion_message`` (plain string).  Older code
+    # expected an OpenAI-style ``choices[0].message.content`` attribute.  We
+    # support both for robustness.
+    # ---------------------------------------------------------------------
+    if hasattr(resp, "completion_message"):
+        cm = resp.completion_message
+        # Newer SDKs: completion_message is a model with a ``content`` attr
+        if hasattr(cm, "content"):
+            content = cm.content
+            # content may be plain str or MessageTextContentItem
+            if isinstance(content, str):
+                return content.strip()
+            if hasattr(content, "text"):
+                return str(content.text).strip()
+        # Older/edge versions: completion_message might be raw string
+        if isinstance(cm, str):
+            return cm.strip()
+
+    if hasattr(resp, "choices") and resp.choices:
+        return resp.choices[0].message.content.strip()
+
+    raise RuntimeError(
+        "Unexpected response schema from Llama API client: " f"{type(resp).__name__}"
+    )
+
+
+async def query_pipeline(query: str, *, top_k: int = 4) -> str:
+    """Search the vector DB and answer using the LLM.
+
+    Steps:
+    1. similarity search → retrieve `top_k` documents
+    2. build a simple prompt with the retrieved context
+    3. ask the LLM for a grounded answer
+    """
+
+    if vectorstore is not None:
+        # 1. Retrieve docs from Pinecone
+        docs = vectorstore.similarity_search(query, k=top_k)
+        context = "\n\n".join(d.page_content for d in docs)
+
+        prompt = (
+            "You are a helpful assistant. Use the CONTEXT below to answer the QUESTION.\n"
+            "If the answer is not contained in the context, say 'I don't know'.\n\n"
+            f"CONTEXT:\n{context}\n\nQUESTION: {query}\nANSWER:"
+        )
+    else:
+        # No vector store; ask the model directly.
+        prompt = (
+            "You are a helpful assistant. Answer the QUESTION as best you can.\n\n"
+            f"QUESTION: {query}\nANSWER:"
+        )
+
+    answer = await _llama_chat(prompt)
+    return answer.strip()
+
+
+# ---------------------------------------------------------------------------
+# LangSmith tracing (optional)
+# ---------------------------------------------------------------------------
+try:
+    from langsmith import traceable  # type: ignore
+
+    def _traceable(name: str):  # wrapper to set default name easily
+        return lambda fn: traceable(fn, name=name)
+
+except ImportError:  # LangSmith not installed → no-op decorator
+
+    def _traceable(name: str):
+        def decorator(fn):
+            return fn
+
+        return decorator
+
+
+# Apply LangSmith tracing (function wrapping) if available
+_llama_chat = _traceable("LlamaChat")(_llama_chat)
+query_pipeline = _traceable("QueryPipeline")(query_pipeline)
