@@ -7,9 +7,14 @@ are available during development without explicitly `export`-ing them.
 
 # Load env vars first (no hard dependency in production)
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv, find_dotenv
 
-    load_dotenv()
+    _env_file = find_dotenv(usecwd=True)
+    if _env_file:
+        load_dotenv(_env_file, override=False)
+    else:
+        # .env not found—this is fine in production where variables are set
+        pass
 except ModuleNotFoundError:
     # python-dotenv is an optional dev dependency; ignore if missing
     pass
@@ -26,10 +31,16 @@ import asyncio
 # ---------------------------------------------------------------------------
 
 # pylint: disable=invalid-name
-USE_PINECONE = False  # flip to ``True`` when you want Pinecone back
+USE_PINECONE = True  # Pinecone vector store enabled by default
+
+try:
+    from pinecone import Pinecone, ServerlessSpec  # SDK v3
+except ImportError as _pc_err:  # legacy SDK installed
+    raise RuntimeError(
+        "Pinecone SDK v3+ is required. Run:  pip install --upgrade 'pinecone-client>=3'"
+    ) from _pc_err
 
 if USE_PINECONE:
-    import pinecone
     from langchain_openai.embeddings.base import OpenAIEmbeddings
     from langchain_pinecone import PineconeVectorStore
 
@@ -41,30 +52,35 @@ if USE_PINECONE:
 # ----------------------------------------------------------------------------
 
 if USE_PINECONE:
-    _pinecone_api_key = os.environ.get("PINECONE_API_KEY")
-    if not _pinecone_api_key:
-        raise RuntimeError("PINECONE_API_KEY environment variable is not set.")
+    # ------------------------------------------------------------------------
+    #  Pinecone initialisation (SDK v3, serverless)
+    # ------------------------------------------------------------------------
+    _pc_api_key = os.environ.get("PINECONE_API_KEY")
+    _pc_host = os.environ.get("PINECONE_HOST")  # serverless endpoint URL
+    _pc_index = os.environ.get("PINECONE_INDEX", "ishtar-ai")
 
-    _pinecone_index = os.environ.get("PINECONE_INDEX", "ishtar-ai")
+    if not _pc_api_key or not _pc_host:
+        raise RuntimeError("PINECONE_API_KEY and PINECONE_HOST are required.")
 
-    # Instantiate Pinecone client (SDK >=3.0)
-    pinecone_client = pinecone.Pinecone(api_key=_pinecone_api_key)
+    pc = Pinecone(api_key=_pc_api_key)
 
-    # Ensure index exists (create if missing)
-    if _pinecone_index not in pinecone_client.list_indexes().names():
-        from pinecone import ServerlessSpec
-
-        DEFAULT_DIMENSION = 1536
-        pinecone_client.create_index(
-            name=_pinecone_index,
-            dimension=DEFAULT_DIMENSION,
+    # Create index if missing (1536 dims → OpenAI text-embedding-3/text-ada)
+    if _pc_index not in pc.list_indexes().names():
+        pc.create_index(
+            name=_pc_index,
+            dimension=1536,
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
 
-    index = pinecone_client.Index(_pinecone_index)
+    index = pc.Index(_pc_index, host=_pc_host)
 
-    vectorstore = PineconeVectorStore(index=index, embedding=OpenAIEmbeddings())
+    # LangChain wrapper (namespaces optional)
+    vectorstore = PineconeVectorStore(
+        index=index,
+        embedding=OpenAIEmbeddings(),
+        namespace="default",
+    )
 else:
     vectorstore = None  # type: ignore
 
@@ -244,3 +260,23 @@ except ImportError:  # LangSmith not installed → no-op decorator
 # Apply LangSmith tracing (function wrapping) if available
 _llama_chat = _traceable("LlamaChat")(_llama_chat)
 query_pipeline = _traceable("QueryPipeline")(query_pipeline)
+
+
+# ---------------------------------------------------------------------------
+# Helper: ingest documents into Pinecone
+# ---------------------------------------------------------------------------
+async def ingest_documents(docs: list[str], metadatas: List[dict] | None = None):
+    """Embed & upsert raw texts into Pinecone.
+
+    Pass a list of raw strings (already chunked) and optional per-chunk metadata.
+    """
+
+    if not USE_PINECONE or vectorstore is None:
+        raise RuntimeError("Pinecone is disabled.")
+
+    _metas = metadatas or [{}] * len(docs)
+    if len(_metas) != len(docs):
+        raise ValueError("metadatas length must match docs length")
+
+    # `add_texts` handles embeddings + upsert behind the scenes
+    await asyncio.to_thread(vectorstore.add_texts, texts=docs, metadatas=_metas)
