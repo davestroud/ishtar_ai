@@ -3,35 +3,25 @@
 import os
 import gradio as gr
 from dotenv import load_dotenv
-from llama_api_client import LlamaAPIClient
+import httpx
 
 # Load environment variables
 load_dotenv()
 
-# Llama API configuration
-API_KEY = os.getenv("LLAMA_API_KEY")
-if not API_KEY:
-    # For Hugging Face Spaces, you should set this as a secret
-    # If using HF_TOKEN, adjust accordingly
-    API_KEY = os.getenv("HF_TOKEN")
-
-MODEL_ID = "Llama-4-Maverick-17B-128E-Instruct-FP8"
-
-# Initialize Llama client
-client = LlamaAPIClient(
-    api_key=API_KEY,
-    base_url="https://api.llama.com/v1/",
-)
-
+# Hugging Face Inference API configuration
+MODEL_ID = "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}"
+API_TOKEN = os.getenv("HF_TOKEN")
+HEADERS = {"Authorization": f"Bearer {API_TOKEN}"} if API_TOKEN else {}
 
 def generate_response(message, history, temperature=0.7, max_tokens=256):
     """Generate a response from Llama."""
     if not message.strip():
         return "Please enter a message to generate a response."
 
-    if not API_KEY:
+    if not API_TOKEN:
         return (
-            "Please set your Llama API key as a secret in Hugging Face Spaces settings."
+            "Please set your Hugging Face API token as a secret in Hugging Face Spaces settings."
         )
 
     # Format messages for the API
@@ -41,30 +31,32 @@ def generate_response(message, history, temperature=0.7, max_tokens=256):
     if history:
         for user_msg, bot_msg in history:
             if user_msg:
-                messages.append({"role": "user", "content": user_msg})
+                messages.append(f"User: {user_msg}")
             if bot_msg:
-                messages.append({"role": "assistant", "content": bot_msg})
+                messages.append(f"Assistant: {bot_msg}")
 
     # Add the current message
-    messages.append({"role": "user", "content": message})
+    messages.append(f"User: {message}\nAssistant:")
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_ID,
-            messages=messages,
-            temperature=temperature,
-        )
+        prompt = "\n".join(messages)
 
-        # Extract the completion message content
-        if hasattr(response, "completion_message"):
-            if hasattr(response.completion_message, "content"):
-                if hasattr(response.completion_message.content, "text"):
-                    return response.completion_message.content.text
-                elif isinstance(response.completion_message.content, str):
-                    return response.completion_message.content
+        payload = {
+            "inputs": prompt,
+            "parameters": {"temperature": temperature, "max_new_tokens": max_tokens},
+        }
 
-        # Return full response as last resort
-        return str(response)
+        response = httpx.post(API_URL, headers=HEADERS, json=payload, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+
+        # Typical response: list[{generated_text: str}]
+        if isinstance(data, list) and data and "generated_text" in data[0]:
+            generated = data[0]["generated_text"]
+            if generated.startswith(prompt):
+                generated = generated[len(prompt):]
+            return generated.strip()
+        return str(data)
 
     except Exception as e:
         return f"Error: {str(e)}"

@@ -16,11 +16,19 @@ External data sources such as ReliefWeb, ACLED, and UNHCR can be ingested to kee
    ```bash
    poetry install
    ```
-2. Run the API server:
+2. Activate the virtual environment (optional):
+   ```bash
+   source .venv/bin/activate
+   ```
+3. Copy the example environment file and fill in credentials:
+   ```bash
+   cp env.example .env
+   ```
+4. Run the API server:
    ```bash
    uvicorn ishtar_ai.app.main:app --reload
    ```
-3. Launch the Gradio interface:
+5. Launch the Gradio interface:
    ```bash
    python gradio_app.py
    ```
