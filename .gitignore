@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.envrc
+.idea/
+.DS_Store
+# Poetry
+poetry.lock
+
