@@ -4,7 +4,7 @@ Ishtar AI is a Retrieval-Augmented Generation (RAG) assistant designed to help j
 
 ## Components
 - **FastAPI** provides the API server.
-- **LangChain** orchestrates the RAG pipeline with **Llama 4**.
+- **LangChain** orchestrates the RAG pipeline with **Llama 4**.
 - **Pinecone** stores vector embeddings for similarity search.
 - **Gradio** offers a lightweight UI for manual queries.
 - **Poetry** manages dependencies.
@@ -12,20 +12,14 @@ Ishtar AI is a Retrieval-Augmented Generation (RAG) assistant designed to help j
 External data sources such as ReliefWeb, ACLED, and UNHCR can be ingested to keep the knowledge base up to date.
 
 ## Development
-1. Install Python 3.10 and project dependencies using [pyenv](https://github.com/pyenv/pyenv) and Poetry:
-
+1. Install dependencies with Poetry:
    ```bash
-   pyenv install 3.10.x   # choose a patch version
-   pyenv local 3.10.x
-   poetry env use "$(pyenv which python)"
    poetry install
    ```
-
 2. Run the API server:
    ```bash
    uvicorn ishtar_ai.app.main:app --reload
    ```
-
 3. Launch the Gradio interface:
    ```bash
    python gradio_app.py
@@ -38,5 +32,16 @@ docker build -t ishtar-ai .
 docker run -p 8000:8000 ishtar-ai
 ```
 
-## License
-MIT
+# Ishtar AI – example environment variables
+
+# OpenAI
+OPENAI_API_KEY=
+
+# Pinecone
+PINECONE_API_KEY=
+PINECONE_ENV=
+PINECONE_INDEX=ishtar-ai
+
+# Hugging Face / Llama
+LLAMA_API_KEY=
+HF_TOKEN=
