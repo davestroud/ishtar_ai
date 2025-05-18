@@ -14,15 +14,18 @@ API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}"
 API_TOKEN = os.getenv("HF_TOKEN")
 HEADERS = {"Authorization": f"Bearer {API_TOKEN}"} if API_TOKEN else {}
 
+
+
+
 def generate_response(message, history, temperature=0.7, max_tokens=256):
     """Generate a response from Llama."""
     if not message.strip():
         return "Please enter a message to generate a response."
 
     if not API_TOKEN:
-        return (
-            "Please set your Hugging Face API token as a secret in Hugging Face Spaces settings."
-        )
+
+        return "Please set your Hugging Face API token as a secret in Hugging Face Spaces settings."
+
 
     # Format messages for the API
     messages = []
@@ -54,7 +57,9 @@ def generate_response(message, history, temperature=0.7, max_tokens=256):
         if isinstance(data, list) and data and "generated_text" in data[0]:
             generated = data[0]["generated_text"]
             if generated.startswith(prompt):
-                generated = generated[len(prompt):]
+
+                generated = generated[len(prompt) :]
+
             return generated.strip()
         return str(data)
 

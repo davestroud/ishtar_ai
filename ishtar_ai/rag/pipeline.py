@@ -21,9 +21,19 @@ vectorstore = Pinecone(
 
 llm = OpenAI(model="llama-4")
 
-qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vectorstore.as_retriever())
+
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    chain_type="stuff",
+    retriever=vectorstore.as_retriever(),
+)
 
 async def query_pipeline(query: str) -> str:
     """Run the RAG pipeline and return the answer text."""
-    result = qa_chain.run(query)
+    # LangChain RetrievalQA provides an asynchronous ``acall`` method
+    result = await qa_chain.acall(query)
+    # ``acall`` returns a dict with the key ``"result"`` holding the answer text
+    if isinstance(result, dict) and "result" in result:
+        return result["result"]
+
     return result
