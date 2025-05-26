@@ -103,6 +103,8 @@ from llama_api_client import LlamaAPIClient
 
 llama_client = LlamaAPIClient(api_key=_llama_api_key, base_url=_llama_base_url)
 
+# print("LLM_API_KEY:", os.environ.get("LLM_API_KEY"))
+# print("PINECONE_API_KEY:", os.environ.get("PINECONE_API_KEY"))
 
 # ---------------------------------------------------------------------------
 # Tavily web search (real-time layer) – optional
