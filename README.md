@@ -16,6 +16,47 @@ docker compose -f infra/compose.dev.yml up --build
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json"   -d '{"query":"What is Ishtar AI?", "k": 6}'
 ```
 
+## Python virtual environment best practices
+
+Creating an isolated Python environment keeps system packages untouched and makes
+dependencies reproducible across machines. A typical workflow looks like this:
+
+1. **Pick a Python version manager (optional but recommended).** Tools such as
+   [`pyenv`](https://github.com/pyenv/pyenv) or [`asdf`](https://asdf-vm.com/)
+   let you pin the interpreter version per project, which prevents "works on my
+   machine" surprises.
+2. **Create the environment inside the project (but outside version control).**
+   ```bash
+   python3 -m venv .venv
+   ```
+   Add the folder (e.g. `.venv/`) to `.gitignore` so the virtual environment
+   never lands in commits.
+3. **Activate the environment whenever you work on the repo.**
+   ```bash
+   source .venv/bin/activate  # Linux/macOS
+   .venv\Scripts\activate    # Windows (PowerShell)
+   ```
+   Your shell prompt should now include the environment name.
+4. **Upgrade tooling before installing dependencies.**
+   ```bash
+   python -m pip install --upgrade pip setuptools wheel
+   ```
+5. **Install project dependencies from a lock file when available.**
+   ```bash
+   pip install -e .
+   ```
+   Use `pip install -r requirements.txt` or `pip-sync` if the project ships
+   explicit requirement lists.
+6. **Record new dependencies immediately.** After installing a package, update
+   the appropriate `requirements` file or the `pyproject.toml` so teammates can
+   reproduce the environment.
+7. **Deactivate when finished.** Run `deactivate` before switching projects to
+   avoid leaking environment variables or paths between shells.
+
+For more advanced use cases, consider [`uv`](https://github.com/astral-sh/uv)
+or [`pipx`](https://pypa.github.io/pipx/) to install CLI tooling in isolated
+environments while keeping your project dependencies tidy.
+
 ## Local (no Docker)
 ```bash
 pip install -U pip
