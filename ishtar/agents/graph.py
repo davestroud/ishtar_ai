@@ -1,23 +1,48 @@
 from __future__ import annotations
-from langgraph.graph import StateGraph, END
-from .prompts import SUMMARIZE_TMPL, VERIFY_TMPL, REFINE_TMPL
+
+import json
+from typing import Any, TypedDict
+
+from langgraph.graph import END, StateGraph
+
+from .prompts import REFINE_TMPL, SUMMARIZE_TMPL, VERIFY_TMPL
 from ishtar.llm.client import llm_call
 
-def summarize(state):
-    ctx = state["context"]; q = state["query"]
+
+class AgentState(TypedDict, total=False):
+    query: str
+    context: list[dict[str, Any]]
+    draft: str
+    verdict: str
+    final: str
+
+
+def _context_to_prompt(ctx: list[dict[str, Any]] | None) -> str:
+    if not ctx:
+        return "[]"
+    return json.dumps(ctx, indent=2)
+
+
+def summarize(state: AgentState) -> AgentState:
+    ctx = _context_to_prompt(state.get("context"))
+    q = state["query"]
     return {"draft": llm_call(SUMMARIZE_TMPL.format(query=q, context=ctx))}
 
-def verify(state):
-    draft = state["draft"]; ctx = state["context"]
+
+def verify(state: AgentState) -> AgentState:
+    draft = state["draft"]
+    ctx = _context_to_prompt(state.get("context"))
     out = llm_call(VERIFY_TMPL.format(draft=draft, context=ctx))
     return {"verdict": out}
 
-def refine(state):
+
+def refine(state: AgentState) -> AgentState:
     draft, verdict = state["draft"], state["verdict"]
     return {"final": llm_call(REFINE_TMPL.format(draft=draft, verdict=verdict))}
 
+
 def build_graph():
-    g = StateGraph()
+    g = StateGraph(AgentState)
     g.add_node("summarize", summarize)
     g.add_node("verify", verify)
     g.add_node("refine", refine)

@@ -23,8 +23,22 @@ def chat(body: ChatRequest, retriever=Depends(get_retriever), graph=Depends(get_
     q = body.query
     ctx_docs = retriever.build_context(q, budget_tokens=settings.max_context_tokens, k=body.k)
     result = graph.invoke({"query": q, "context": ctx_docs})
-    citations = [
-        Citation(id=d.get("id",""), source=d.get("meta",{}).get("source",""), score=d.get("score"), metadata=d.get("meta"))
-        for d in ctx_docs
-    ]
-    return ChatResponse(answer=result["final"], citations=citations)
+    answer = result.get("final") or result.get("draft") or ""
+    sorted_docs = sorted(
+        ctx_docs,
+        key=lambda d: (d.get("score") if isinstance(d.get("score"), (int, float)) else 0.0),
+        reverse=True,
+    )
+    citations = []
+    for doc in sorted_docs:
+        meta = doc.get("meta") or {}
+        safe_meta = {k: meta[k] for k in ("source", "title") if meta.get(k)}
+        citations.append(
+            Citation(
+                id=str(doc.get("id", "")),
+                source=safe_meta.get("source", ""),
+                score=doc.get("score"),
+                metadata=safe_meta or None,
+            )
+        )
+    return ChatResponse(answer=answer, citations=citations)

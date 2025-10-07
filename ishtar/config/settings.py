@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     embeddings_provider: str = Field(default="openai", validation_alias="EMBEDDINGS_PROVIDER")
     vector_backend: str = Field(default="faiss", validation_alias="VECTOR_BACKEND")
     index_name: str = Field(default="ishtar-articles", validation_alias="INDEX_NAME")
+    vector_index_path: str = Field(default="data/faiss.index", validation_alias="VECTOR_INDEX_PATH")
 
     max_context_tokens: int = Field(default=4000, validation_alias="MAX_CONTEXT_TOKENS")
     rerank_top_k: int = Field(default=20, validation_alias="RERANK_TOP_K")

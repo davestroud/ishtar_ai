@@ -4,18 +4,129 @@ Version: 0.1.0
 Summary: Ishtar AI: RAG + Multi-Agent API (bootstrap)
 Author: David Stroud
 Requires-Python: >=3.10
-Requires-Dist: fastapi>=0.112
-Requires-Dist: uvicorn[standard]>=0.30
-Requires-Dist: pydantic>=2.7
-Requires-Dist: pydantic-settings>=2.4
-Requires-Dist: httpx>=0.27
-Requires-Dist: tenacity>=8.3
-Requires-Dist: numpy>=1.26
-Requires-Dist: faiss-cpu>=1.8.0
-Requires-Dist: langchain>=0.2.14
-Requires-Dist: langgraph>=0.2.35
-Requires-Dist: openai>=1.43.0
-Requires-Dist: prometheus-client>=0.20
-Requires-Dist: python-dotenv>=1.0
-Requires-Dist: tiktoken>=0.7
-Requires-Dist: feedparser>=6.0
+Description-Content-Type: text/markdown
+Provides-Extra: dev
+Requires-Dist: ruff<1,>=0.6; extra == "dev"
+Requires-Dist: black<25,>=24.0; extra == "dev"
+Requires-Dist: mypy<1.11,>=1.10; extra == "dev"
+Requires-Dist: pytest<9,>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio<0.24,>=0.23; extra == "dev"
+Requires-Dist: pytest-cov<6,>=5.0; extra == "dev"
+
+# Ishtar AI — RAG + Multi-Agent API (Bootstrap)
+
+This is a minimal, production-minded scaffold for the Ishtar AI codebase you described.
+It’s tuned for **Cursor** (IDE) + **Codex** workflows: clean module boundaries, small files,
+and comments where AI pair-programmers add value.
+
+## Quick start (dev)
+```bash
+# 1) Create .env (or export env vars)
+cp .env.example .env
+
+# 2) Build and run (dev services: api + prometheus)
+docker compose -f infra/compose.dev.yml up --build
+
+# 3) Call the API
+curl -X POST http://localhost:8000/chat -H "Content-Type: application/json"   -d '{"query":"What is Ishtar AI?", "k": 6}'
+```
+
+## Python virtual environment best practices
+
+Creating an isolated Python environment keeps system packages untouched and makes
+dependencies reproducible across machines. A typical workflow looks like this:
+
+1. **Pick a Python version manager (optional but recommended).** Tools such as
+   [`pyenv`](https://github.com/pyenv/pyenv) or [`asdf`](https://asdf-vm.com/)
+   let you pin the interpreter version per project, which prevents "works on my
+   machine" surprises.
+2. **Create the environment inside the project (but outside version control).**
+   ```bash
+   python3 -m venv .venv
+   ```
+   Add the folder (e.g. `.venv/`) to `.gitignore` so the virtual environment
+   never lands in commits.
+3. **Activate the environment whenever you work on the repo.**
+   ```bash
+   source .venv/bin/activate  # Linux/macOS
+   .venv\Scripts\activate    # Windows (PowerShell)
+   ```
+   Your shell prompt should now include the environment name.
+4. **Upgrade tooling before installing dependencies.**
+   ```bash
+   python -m pip install --upgrade pip setuptools wheel
+   ```
+5. **Install project dependencies from a lock file when available.**
+   ```bash
+   pip install -e .
+   ```
+   Use `pip install -r requirements.txt` or `pip-sync` if the project ships
+   explicit requirement lists.
+6. **Record new dependencies immediately.** After installing a package, update
+   the appropriate `requirements` file or the `pyproject.toml` so teammates can
+   reproduce the environment.
+7. **Deactivate when finished.** Run `deactivate` before switching projects to
+   avoid leaking environment variables or paths between shells.
+
+For more advanced use cases, consider [`uv`](https://github.com/astral-sh/uv)
+or [`pipx`](https://pypa.github.io/pipx/) to install CLI tooling in isolated
+environments while keeping your project dependencies tidy.
+
+## Local (no Docker)
+```bash
+pip install -U pip
+pip install -e .
+uvicorn apps.api.main:app --reload --port 8000
+```
+
+## Repo map
+```
+ishtar_ai/
+  apps/
+    api/
+      main.py
+      deps.py
+      schemas.py
+  ishtar/
+    config/settings.py
+    ingestion/
+      readers/rss.py
+      normalize.py
+      pipeline.py
+    rag/
+      vectorstore.py
+      embeddings.py
+      retriever.py
+      context.py
+    agents/
+      graph.py
+      prompts.py
+      tools.py
+      policies.py
+    llm/
+      client.py
+      settings.py
+    eval/
+      ragas_eval.py
+      gates.py
+    obs/
+      tracing.py
+      metrics.py
+  scripts/
+    ingest_seed.py
+  infra/
+    docker/
+      api.Dockerfile
+      worker.Dockerfile
+    compose.dev.yml
+  tests/
+    test_rag.py
+    test_agents.py
+  .env.example
+  pyproject.toml
+  README.md
+```
+
+## Cursor + Codex
+- Add a `.cursor/rules` file (optional) to steer Codex (naming, patterns).
+- Use small, single-purpose files — Codex follows them very well.

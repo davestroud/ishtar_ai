@@ -3,7 +3,7 @@ from ishtar.rag.vectorstore import make_vectorstore
 from ishtar.rag.retriever import Retriever
 from ishtar.agents.graph import build_graph
 
-_vectorstore = make_vectorstore(settings.vector_backend)
+_vectorstore = make_vectorstore(settings.vector_backend, settings.vector_index_path)
 _retriever = Retriever(_vectorstore, k=settings.retrieve_k, rerank_top_k=settings.rerank_top_k)
 _graph = build_graph()
 

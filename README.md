@@ -64,6 +64,13 @@ pip install -e .
 uvicorn apps.api.main:app --reload --port 8000
 ```
 
+To run the test suite (or use the linting tools), install the development extras:
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
 ## Repo map
 ```
 ishtar_ai/
